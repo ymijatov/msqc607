@@ -5,8 +5,6 @@ Extension for time-varying dynamics
 
 import numpy as np
 import matplotlib.pyplot as plt
-# from matplotlib.colors import LogNorm
-# import seaborn as sns
 from tda import TDAAnalyzer, QuantumDistanceComputer
 import time
 
@@ -74,14 +72,12 @@ class TemporalQuantumTDA(TDAAnalyzer):
         log_psd = np.log10(psd_filtered + 1e-10)
         psd_normalized = (log_psd - np.mean(log_psd)) / (np.std(log_psd) + 1e-10)
         
-        return f_filtered, psd_normalized
+        return f_filtered, psd_normalized, f, Pxx
     
     def compute_quantum_distance_matrix(self, psd_vectors, method='quantum'):
         """
         Compute pairwise quantum distances between PSD vectors
-        
-        This is where quantum computation enters!
-        Each PSD is a high-dimensional vector - perfect for quantum comparison.
+        Each PSD is a high-dimensional vector.
         """
         n_segments = len(psd_vectors)
         distance_matrix = np.zeros((n_segments, n_segments))
@@ -118,7 +114,7 @@ class TemporalQuantumTDA(TDAAnalyzer):
         Full temporal analysis pipeline
         """
         print("\n" + "="*70)
-        print("TEMPORAL QUANTUM TDA ANALYSIS")
+        print("TEMPORAL QUANTUM-ENHANCED TDA ANALYSIS")
         print("="*70)
         
         results = {}
@@ -135,12 +131,16 @@ class TemporalQuantumTDA(TDAAnalyzer):
         print("\n[2/5] Computing PSD for each segment...")
         psd_vectors = []
         frequencies = None
+        welch_frequencies = []
+        welch_psd = []
         
         for i, segment in enumerate(segments):
-            f, psd = self.compute_psd_vector(segment, freq_range)
+            f, psd, f_raw, Pxx = self.compute_psd_vector(segment, freq_range)
             if frequencies is None:
                 frequencies = f
             psd_vectors.append(psd)
+            welch_frequencies.append(f_raw)
+            welch_psd.append(Pxx)
         
         results['frequencies'] = frequencies
         results['psd_vectors'] = np.array(psd_vectors)
@@ -161,7 +161,7 @@ class TemporalQuantumTDA(TDAAnalyzer):
         
         for i, segment in enumerate(segments):
             # Get full PSD (not normalized) for TDA
-            f_full, psd_full = self.compute_welch_psd(segment)
+            f_full, psd_full = welch_frequencies[i], welch_psd[i] 
             
             # Apply H0 TDA
             h0_diagram, f_filt, psd_filt = self.compute_h0_persistence_1d(
@@ -211,6 +211,10 @@ class TemporalQuantumTDA(TDAAnalyzer):
         sequential_distances = np.array([
             distance_matrix[i, i+1] for i in range(n-1)
         ])
+
+        print("*"*10)
+        print("Sequential distances:", sequential_distances)
+        print("*"*10)
         
         # Find jumps
         mean_dist = np.mean(sequential_distances)
@@ -436,7 +440,7 @@ def generate_evolving_signal(t, modes, transition_time=60):
     return y
 
 
-def test_temporal_quantum_tda():
+def test_temporal_quantum_tda(method='classical'):
     """
     Test temporal analysis with evolving dynamics
     """
@@ -461,59 +465,32 @@ def test_temporal_quantum_tda():
     print(f"  Mode at 2.5 Hz drifts upward after t=90s")
     
     # Analyze classically
-    c_analyzer = TemporalQuantumTDA(fs=fs, method='classical')
+    analyzer = TemporalQuantumTDA(fs=fs, method=method)
     # Record the start time
-    c_start_time = time.time()
-    c_results = c_analyzer.analyze_temporal_evolution(
+    start_time = time.time()
+    results = analyzer.analyze_temporal_evolution(
         signal_data,
         segment_length=30,  # 30s segments
         overlap=0.5,
-        method='classical'  # Start with classical
+        method=method  # Start with classical
     )
     # Record the start time
-    c_end_time = time.time()
+    end_time = time.time()
     # Calculate the elapsed time
-    c_elapsed_time = c_end_time - c_start_time
-    c_results['elapsed_time'] = c_elapsed_time
+    elapsed_time = end_time - start_time
+    results['elapsed_time'] = elapsed_time
 
     # Print the result
-    print(f"Execution time: {c_elapsed_time:.4f} seconds")
+    print(f"Execution time: {elapsed_time:.4f} seconds")
     
     # Plot
-    fig = c_analyzer.plot_temporal_analysis(signal_data, c_results, true_modes=modes)
-    plt.savefig('temporal_classical_tda.png', dpi=150, bbox_inches='tight')
-    print("\n✓ Saved: temporal_classical_tda.png")
-    
-    plt.show()
-
-    # Analyze with Q
-    q_analyzer = TemporalQuantumTDA(fs=fs, method='swap_test')
-    
-    # Record the start time
-    q_start_time = time.time()
-    q_results = c_analyzer.analyze_temporal_evolution(
-        signal_data,
-        segment_length=30,  # 30s segments
-        overlap=0.5,
-        method='swap_test'  # Start with classical
-    )
-    # Record the start time
-    q_end_time = time.time()
-    # Calculate the elapsed time
-    q_elapsed_time = q_end_time - q_start_time
-    q_results['elapsed_time'] = q_elapsed_time
-
-    # Print the result
-    print(f"Execution time: {q_elapsed_time:.4f} seconds")
-    
-    # Plot
-    fig = c_analyzer.plot_temporal_analysis(signal_data, q_results, true_modes=modes)
-    plt.savefig('temporal_quantum_tda.png', dpi=150, bbox_inches='tight')
-    print("\n✓ Saved: temporal_quantum_tda.png")
+    fig = analyzer.plot_temporal_analysis(signal_data, results, true_modes=modes)
+    plt.savefig(f'figures/temporal_{method}_tda.png', dpi=150, bbox_inches='tight')
+    print(f"\n✓ Saved: figures/temporal_{method}_tda.png")
     
     plt.show()
     
-    return c_results, q_results
+    return results
 
 def compare_classical_vs_quantum():
     """
@@ -606,8 +583,8 @@ def compare_classical_vs_quantum():
         signal_data, results_classical, results_quantum, modes, fs
     )
     
-    plt.savefig('classical_vs_quantum_comparison.png', dpi=150, bbox_inches='tight')
-    print("\n✓ Saved: classical_vs_quantum_comparison.png")
+    plt.savefig('figures/classical_vs_quantum_comparison.png', dpi=150, bbox_inches='tight')
+    print("\n✓ Saved: figures/classical_vs_quantum_comparison.png")
     
     plt.show()
     
@@ -724,7 +701,7 @@ def plot_classical_vs_quantum_comparison(signal_data, results_c, results_q,
     
     # Correlation coefficient
     corr = np.corrcoef(dist_c, dist_q)[0, 1]
-    ax8.text(0.05, 0.95, f'Correlation: {corr:.4f}', 
+    ax8.text(0.6, 0.15, f'Correlation: {corr:.4f}', 
              transform=ax8.transAxes, fontsize=12,
              verticalalignment='top',
              bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
@@ -834,6 +811,6 @@ def plot_classical_vs_quantum_comparison(signal_data, results_c, results_q,
 
 if __name__ == "__main__":
     # Run temporal test
-    c_results, q_results = test_temporal_quantum_tda()
+    results = test_temporal_quantum_tda(method='classical')
 
-    results_classical, results_quantum = compare_classical_vs_quantum()
+    # results_classical, results_quantum = compare_classical_vs_quantum()

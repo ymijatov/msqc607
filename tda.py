@@ -47,6 +47,156 @@ class QuantumDistanceComputer:
         norm = np.linalg.norm(vec)
         return vec / norm if norm > 0 else vec
     
+    def normalize_to_probability(self, vec):
+        """Normalize vector to probability distribution"""
+        vec_positive = np.abs(vec)  # Ensure non-negative
+        total = np.sum(vec_positive)
+        return vec_positive / total if total > 0 else vec_positive
+
+    def compute_trace_distance_classical(self, vec1, vec2):
+        """
+        Classical trace distance for diagonal density matrices.
+        D(ρ₁, ρ₂) = ½ Σᵢ |p₁ᵢ - p₂ᵢ|
+        """
+        # Normalize to probability distributions
+        p1 = self.normalize_to_probability(vec1)
+        p2 = self.normalize_to_probability(vec2)
+        
+        # Pad to same length
+        max_len = max(len(p1), len(p2))
+        p1_padded = np.pad(p1, (0, max_len - len(p1)))
+        p2_padded = np.pad(p2, (0, max_len - len(p2)))
+        
+        # L1 distance
+        trace_dist = 0.5 * np.sum(np.abs(p1_padded - p2_padded))
+        
+        return trace_dist
+
+    def create_trace_distance_circuit(self, prob_dist1, prob_dist2):
+        """
+        Quantum circuit to estimate trace distance.
+        Uses amplitude encoding and measurement statistics.
+        """
+        n_qubits = int(np.ceil(np.log2(len(prob_dist1))))
+        n_qubits = max(n_qubits, 1)
+        padded_size = 2 ** n_qubits
+        
+        # Pad probability distributions
+        p1 = np.pad(prob_dist1, (0, padded_size - len(prob_dist1)))
+        p2 = np.pad(prob_dist2, (0, padded_size - len(prob_dist2)))
+        
+        # Create amplitude-encoded states
+        # |ψ₁⟩ = Σᵢ √pᵢ|i⟩
+        state1 = np.sqrt(p1)
+        state2 = np.sqrt(p2)
+        
+        # Normalize
+        state1 = state1 / np.linalg.norm(state1)
+        state2 = state2 / np.linalg.norm(state2)
+        
+        # Create circuit with two registers
+        qr1 = QuantumRegister(n_qubits, 'state1')
+        qr2 = QuantumRegister(n_qubits, 'state2')
+        cr = ClassicalRegister(n_qubits, 'result')
+        
+        qc = QuantumCircuit(qr1, qr2, cr)
+        
+        # Initialize states
+        qc.initialize(state1, qr1)
+        qc.initialize(state2, qr2)
+        
+        # Measure in computational basis
+        qc.measure(qr1, cr)
+        
+        return qc, p1, p2
+
+    def compute_trace_distance_quantum(self, vec1, vec2):
+        """
+        Quantum estimation of trace distance using amplitude encoding.
+        Estimates via sampling from probability distributions.
+        """
+        # Normalize to probabilities
+        p1 = self.normalize_to_probability(vec1)
+        p2 = self.normalize_to_probability(vec2)
+        
+        # Pad to same length and power of 2
+        max_len = max(len(p1), len(p2))
+        padded_size = 2 ** int(np.ceil(np.log2(max_len)))
+        p1_padded = np.pad(p1, (0, padded_size - len(p1)))
+        p2_padded = np.pad(p2, (0, padded_size - len(p2)))
+        
+        # Create and run circuit
+        qc, p1_final, p2_final = self.create_trace_distance_circuit(p1_padded, p2_padded)
+        
+        job = self.simulator.run(qc, shots=self.shots)
+        result = job.result()
+        counts = result.get_counts()
+        
+        # Estimate probability distributions from measurements
+        p1_estimated = np.zeros(padded_size)
+        for bitstring, count in counts.items():
+            idx = int(bitstring, 2)
+            p1_estimated[idx] = count / self.shots
+        
+        # For trace distance, we need both distributions
+        # Run second circuit for p2
+        qr = QuantumRegister(int(np.log2(padded_size)), 'state2')
+        cr = ClassicalRegister(int(np.log2(padded_size)), 'result')
+        qc2 = QuantumCircuit(qr, cr)
+        state2 = np.sqrt(p2_final) / np.linalg.norm(np.sqrt(p2_final))
+        qc2.initialize(state2, qr)
+        qc2.measure(qr, cr)
+        
+        job2 = self.simulator.run(qc2, shots=self.shots)
+        result2 = job2.result()
+        counts2 = result2.get_counts()
+        
+        p2_estimated = np.zeros(padded_size)
+        for bitstring, count in counts2.items():
+            idx = int(bitstring, 2)
+            p2_estimated[idx] = count / self.shots
+        
+        # Compute trace distance from estimated distributions
+        trace_dist = 0.5 * np.sum(np.abs(p1_estimated - p2_estimated))
+        
+        return trace_dist
+
+    def compute_distance(self, vec1, vec2):
+        """Enhanced compute_distance with trace distance options"""
+        if self.method == 'classical':
+            return np.linalg.norm(vec1 - vec2)
+        
+        elif self.method == 'trace_distance_classical':
+            return self.compute_trace_distance_classical(vec1, vec2)
+        
+        elif self.method == 'trace_distance_quantum':
+            return self.compute_trace_distance_quantum(vec1, vec2)
+        
+        elif self.method == 'swap_test':
+            # Original swap test code
+            norm1 = np.linalg.norm(vec1)
+            norm2 = np.linalg.norm(vec2)
+            
+            if norm1 > 0 and norm2 > 0:
+                state1 = vec1 / norm1
+                state2 = vec2 / norm2
+                
+                qc = self.create_swap_test_circuit(state1, state2)
+                job = self.simulator.run(qc, shots=self.shots)
+                result = job.result()
+                counts = result.get_counts()
+                
+                prob_0 = counts.get('0', 0) / self.shots
+                inner_product_squared = max(0, 2 * prob_0 - 1)
+                inner_product = np.sqrt(inner_product_squared)
+                
+                distance_squared = norm1**2 + norm2**2 - 2*norm1*norm2*inner_product
+                distance = np.sqrt(max(0, distance_squared))
+                
+                return distance
+            else:
+                return 0.0
+    
     def create_swap_test_circuit(self, state1, state2):
         n_qubits = int(np.ceil(np.log2(max(len(state1), len(state2)))))
         n_qubits = max(n_qubits, 1)
@@ -77,35 +227,6 @@ class QuantumDistanceComputer:
         qc.measure(qr_ancilla[0], cr[0])
         
         return qc
-    
-    def compute_distance(self, vec1, vec2):
-        """Compute distance - keeping for quantum learning"""
-        if self.method == 'classical':
-            return np.linalg.norm(vec1 - vec2)
-        elif self.method == 'swap_test':
-            # Quantum distance computation
-            norm1 = np.linalg.norm(vec1)
-            norm2 = np.linalg.norm(vec2)
-            
-            if norm1 > 0 and norm2 > 0:
-                state1 = vec1 / norm1
-                state2 = vec2 / norm2
-                
-                qc = self.create_swap_test_circuit(state1, state2)
-                job = self.simulator.run(qc, shots=self.shots)
-                result = job.result()
-                counts = result.get_counts()
-                
-                prob_0 = counts.get('0', 0) / self.shots
-                inner_product_squared = max(0, 2 * prob_0 - 1)
-                inner_product = np.sqrt(inner_product_squared)
-                
-                distance_squared = norm1**2 + norm2**2 - 2*norm1*norm2*inner_product
-                distance = np.sqrt(max(0, distance_squared))
-                
-                return distance
-            else:
-                return 0.0
 
 
 class TDAAnalyzer:
@@ -336,171 +457,3 @@ class TDAAnalyzer:
         print(f"Total time: {results['total_time']:.3f}s")
         
         return results
-    
-    # def plot_results(self, signal_data, results, true_modes=None):
-    #     """Visualize H0 TDA results"""
-    #     fig = plt.figure(figsize=(15, 8))
-        
-    #     # 1. Time series
-    #     ax1 = plt.subplot(2, 3, 1)
-    #     t = np.arange(len(signal_data)) / self.fs
-    #     ax1.plot(t, signal_data, 'b-', linewidth=0.5, alpha=0.7)
-    #     ax1.set_xlabel('Time (s)')
-    #     ax1.set_ylabel('Amplitude')
-    #     ax1.set_title('Synchrophasor Signal')
-    #     ax1.grid(True, alpha=0.3)
-        
-    #     # 2. PSD with peaks
-    #     ax2 = plt.subplot(2, 3, 2)
-    #     f = results['frequency']
-    #     Pxx = results['psd']
-        
-    #     ax2.semilogy(f, Pxx, 'b-', linewidth=1.5, label='PSD')
-        
-    #     if 'peak_freqs' in results and len(results['peak_freqs']) > 0:
-    #         ax2.plot(results['peak_freqs'], results['peak_powers'], 
-    #                 'ro', markersize=10, label='Classical peaks')
-        
-    #     if 'tda_peak_freqs' in results and len(results['tda_peak_freqs']) > 0:
-    #         # Get PSD values at TDA peaks
-    #         tda_powers = []
-    #         for freq in results['tda_peak_freqs']:
-    #             idx = np.argmin(np.abs(f - freq))
-    #             tda_powers.append(Pxx[idx])
-    #         ax2.plot(results['tda_peak_freqs'], tda_powers, 
-    #                 'g*', markersize=15, label='TDA (H0) peaks')
-        
-    #     if true_modes is not None:
-    #         true_freqs = [m['freq'] for m in true_modes]
-    #         ax2.axvline(x=true_freqs[0], color='k', linestyle='--', alpha=0.3)
-    #         for freq in true_freqs[1:]:
-    #             ax2.axvline(x=freq, color='k', linestyle='--', alpha=0.3)
-        
-    #     ax2.set_xlabel('Frequency (Hz)')
-    #     ax2.set_ylabel('PSD')
-    #     ax2.set_title('Power Spectral Density')
-    #     ax2.set_xlim([0, 5])
-    #     ax2.grid(True, alpha=0.3)
-    #     ax2.legend(fontsize=8)
-        
-    #     # 3. Log PSD (what we actually analyze)
-    #     ax3 = plt.subplot(2, 3, 3)
-    #     log_psd = np.log10(Pxx + 1e-10)
-    #     ax3.plot(f, log_psd, 'b-', linewidth=1.5)
-    #     ax3.set_xlabel('Frequency (Hz)')
-    #     ax3.set_ylabel('log₁₀(PSD)')
-    #     ax3.set_title('Log PSD (1D Function for H0)')
-    #     ax3.set_xlim([0, 5])
-    #     ax3.grid(True, alpha=0.3)
-        
-    #     # 4. H0 Persistence Diagram
-    #     ax4 = plt.subplot(2, 3, 4)
-    #     if len(results['h0_diagram']) > 0:
-    #         h0 = results['h0_diagram']
-    #         persistences = h0[:, 1] - h0[:, 0]
-    #         threshold = results['threshold']
-    #         significant_mask = persistences > threshold
-            
-    #         ax4.scatter(h0[~significant_mask, 0], h0[~significant_mask, 1],
-    #                    c='blue', s=50, alpha=0.4, label='Noise')
-            
-    #         if np.any(significant_mask):
-    #             ax4.scatter(h0[significant_mask, 0], h0[significant_mask, 1],
-    #                        c='red', s=150, marker='*',
-    #                        label=f'Significant ({np.sum(significant_mask)})')
-            
-    #         max_val = np.max(h0)
-    #         ax4.plot([np.min(h0), max_val], [np.min(h0), max_val], 'k--', alpha=0.3)
-    #         ax4.legend(loc='lower right')
-    #         ax4.set_xlabel('Birth')
-    #         ax4.set_ylabel('Death')
-    #         ax4.set_title(f'H₀ Persistence Diagram ({len(h0)} features)')
-    #     else:
-    #         ax4.text(0.5, 0.5, 'No H0 features',
-    #                 ha='center', va='center', transform=ax4.transAxes)
-    #     ax4.grid(True, alpha=0.3)
-        
-    #     # 5. Comparison bar chart
-    #     ax5 = plt.subplot(2, 3, 5)
-    #     if true_modes is not None:
-    #         true_freqs = np.array([m['freq'] for m in true_modes])
-    #         classical_freqs = results.get('peak_freqs', np.array([]))
-    #         tda_freqs = results.get('tda_peak_freqs', np.array([]))
-            
-    #         x = np.arange(len(true_freqs))
-    #         width = 0.25
-            
-    #         ax5.bar(x - width, true_freqs, width, label='Ground Truth', color='black', alpha=0.5)
-            
-    #         if len(classical_freqs) >= len(true_freqs):
-    #             ax5.bar(x, classical_freqs[:len(true_freqs)], width, label='Classical', color='red', alpha=0.7)
-            
-    #         if len(tda_freqs) >= len(true_freqs):
-    #             ax5.bar(x + width, tda_freqs[:len(true_freqs)], width, label='TDA (H0)', color='green', alpha=0.7)
-            
-    #         ax5.set_ylabel('Frequency (Hz)')
-    #         ax5.set_title('Mode Detection Comparison')
-    #         ax5.set_xticks(x)
-    #         ax5.set_xticklabels([f'Mode {i+1}' for i in range(len(true_freqs))])
-    #         ax5.legend()
-    #         ax5.grid(True, alpha=0.3, axis='y')
-        
-    #     # 6. Timing
-    #     ax6 = plt.subplot(2, 3, 6)
-    #     stages = ['Spectral\n(Welch)', 'TDA\n(H0)']
-    #     times = [results.get('spectral_time', 0), results.get('tda_time', 0)]
-    #     ax6.bar(stages, times, color=['blue', 'green'], alpha=0.7)
-    #     ax6.set_ylabel('Time (seconds)')
-    #     ax6.set_title('Pipeline Timing')
-    #     ax6.grid(True, alpha=0.3, axis='y')
-        
-    #     plt.suptitle('TDA Analysis using H0 Persistence (Correct Method)', 
-    #                 fontsize=14, fontweight='bold')
-    #     plt.tight_layout()
-        
-    #     return fig
-
-
-# def test_h0_method():
-#     """Test the CORRECT H0 method"""
-#     print("\n" + "="*70)
-#     print("TESTING H0 METHOD (What Mishra & Vanfretti Actually Do)")
-#     print("="*70)
-    
-#     # Generate test signal
-#     modes = [
-#         {'freq': 0.5, 'damping': 0.03, 'amplitude': 0.25},
-#         {'freq': 1.2, 'damping': 0.03, 'amplitude': 0.25},
-#         {'freq': 2.8, 'damping': 0.03, 'amplitude': 0.20},
-#     ]
-    
-#     duration = 120.0
-#     fs = 30.0
-#     t = np.arange(0, duration, 1/fs)
-    
-#     print(f"\nTest signal: {duration}s, {len(modes)} modes")
-#     for i, mode in enumerate(modes, 1):
-#         print(f"  Mode {i}: {mode['freq']:.1f} Hz, damping={mode['damping']:.0%}")
-    
-#     # Create analyzer
-#     analyzer = TDAAnalyzer(method='classical')
-#     signal_data = analyzer.generate_synchrophasor_signal(t, modes, noise_level=0.02)
-    
-#     # Analyze
-#     results = analyzer.analyze_signal(signal_data, n_expected_modes=len(modes))
-    
-#     # Plot
-#     fig = analyzer.plot_results(signal_data, results, true_modes=modes)
-#     plt.savefig('h0_tda_correct_method.png', dpi=150, bbox_inches='tight')
-#     print("\n✓ Saved: h0_tda_correct_method.png")
-    
-#     plt.show()
-    
-#     return results
-
-
-# if __name__ == "__main__":
-#     results = test_h0_method()
-#     print("\n" + "="*70)
-#     print("H0 TDA METHOD TEST COMPLETE!")
-#     print("="*70)

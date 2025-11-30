@@ -2,6 +2,9 @@
 __pycache__/
 *.py[codz]
 *$py.class
+*html
+*data
+
 
 # C extensions
 *.so
@@ -210,3 +213,4 @@ figures/
 *.pdf
 __pycache__
 .DS_Store
+report_files

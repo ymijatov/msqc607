@@ -73,3 +73,99 @@ quick_benchmark(
     results_1015,
     save_path='./../figures/sigId-1015-benchmark.png'
 )
+
+### 1058 ###
+
+
+print(describe_gesl_file(
+    './../data/sigId-1058.csv',
+    './../data/sigId-1058-Metadata.csv'
+))
+
+results_1058 = quick_analysis(
+    './../data/sigId-1058.csv',
+    './../data/sigId-1058-Metadata.csv',
+    pmu_id='P001',
+    segment_duration=15.0
+)
+
+compare_with_known_frequencies(results_1058)
+
+quick_benchmark(
+    './../data/sigId-1058.csv',
+    './../data/sigId-1058-Metadata.csv', 
+    results_1058,
+    save_path='./../figures/sigId-1058-benchmark.png'
+)
+
+### 1084 ###
+
+
+print(describe_gesl_file(
+    './../data/sigId-1084.csv',
+    './../data/sigId-1084-Metadata.csv'
+))
+
+results_1084 = quick_analysis(
+    './../data/sigId-1084.csv',
+    './../data/sigId-1084-Metadata.csv',
+    pmu_id='P001',
+    segment_duration=15.0
+)
+
+compare_with_known_frequencies(results_1084)
+
+quick_benchmark(
+    './../data/sigId-1084.csv',
+    './../data/sigId-1084-Metadata.csv', 
+    results_1084,
+    save_path='./../figures/sigId-1084-benchmark.png'
+)
+
+### 1085 ###
+
+
+print(describe_gesl_file(
+    './../data/sigId-1085.csv',
+    './../data/sigId-1085-Metadata.csv'
+))
+
+results_1085 = quick_analysis(
+    './../data/sigId-1085.csv',
+    './../data/sigId-1085-Metadata.csv',
+    pmu_id='P001',
+    segment_duration=15.0
+)
+
+compare_with_known_frequencies(results_1085)
+
+quick_benchmark(
+    './../data/sigId-1085.csv',
+    './../data/sigId-1085-Metadata.csv', 
+    results_1085,
+    save_path='./../figures/sigId-1085-benchmark.png'
+)
+
+### 1232  ###
+
+
+print(describe_gesl_file(
+    './../data/sigId-1232.csv',
+    './../data/sigId-1232-Metadata.csv'
+))
+
+results_1232 = quick_analysis(  
+    './../data/sigId-1232.csv',
+    './../data/sigId-1232-Metadata.csv',
+    pmu_id='P001',
+    segment_duration=15.0
+)
+
+compare_with_known_frequencies(results_1232)
+
+quick_benchmark(
+    './../data/sigId-1232.csv',
+    './../data/sigId-1232-Metadata.csv', 
+    results_1232,
+    save_path='./../figures/sigId-1232-benchmark.png'
+)

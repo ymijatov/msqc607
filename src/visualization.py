@@ -369,3 +369,173 @@ def plot_distance_correlation(results: ExperimentResults,
     plt.tight_layout()
     
     return fig
+
+"""
+Benchmarking Visualization for Real Data Results
+
+Visualize what's actually happening in the signal vs what the pipeline detected.
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy import signal as sig
+from typing import Optional, List
+
+from real_data import load_gesl_signal
+from real_data_experiments import RealDataExperimentResults
+
+
+def benchmark_visualization(
+    signal_path: str,
+    metadata_path: str,
+    results: RealDataExperimentResults,
+    pmu_id: str = 'P001',
+    measurement: str = 'vp_m',
+    known_frequencies: Optional[List[float]] = None,
+    save_path: Optional[str] = None,
+):
+    """
+    Create comprehensive benchmark visualization.
+    """
+    # Load raw signal (not normalized, for visualization)
+    t, signal_raw, fs, info = load_gesl_signal(
+        signal_path, metadata_path,
+        pmu_id=pmu_id, measurement=measurement,
+        detrend=True, normalize=False
+    )
+    
+    if known_frequencies is None and info:
+        known_frequencies = info.oscillation_frequencies
+    
+    # Get results for comparison
+    trace_result = results.results_by_method.get('trace_distance_classical')
+    euclidean_result = results.results_by_method.get('classical')
+    
+    fig = plt.figure(figsize=(16, 14))
+    
+    # =========================================
+    # 1. Raw signal with regime changes
+    # =========================================
+    ax1 = fig.add_subplot(4, 1, 1)
+    ax1.plot(t, signal_raw, 'k-', linewidth=0.3, alpha=0.7)
+    ax1.set_ylabel(f'{measurement}')
+    ax1.set_title(f'Signal {info.signal_id if info else ""}: {pmu_id}.{measurement}')
+    
+    # Overlay regime change detections
+    colors = {'classical': 'blue', 'trace_distance_classical': 'green', 'trace_distance_quantum': 'red'}
+    for method, color in colors.items():
+        if method in results.results_by_method:
+            transitions = results.get_detected_transitions(method)
+            for i, trans in enumerate(transitions):
+                label = method.replace('_', ' ').title() if i == 0 else None
+                ax1.axvline(trans, color=color, linestyle='--', alpha=0.7, linewidth=1.5, label=label)
+    
+    ax1.legend(loc='upper right', fontsize=8)
+    ax1.set_xlim(t[0], t[-1])
+    
+    # =========================================
+    # 2. Spectrogram (ground truth time-frequency)
+    # =========================================
+    ax2 = fig.add_subplot(4, 1, 2)
+    
+    # Compute spectrogram
+    nperseg = int(15 * fs)  # match your segment duration
+    noverlap = int(nperseg * 0.5)
+    f_spec, t_spec, Sxx = sig.spectrogram(
+        signal_raw, fs=fs, 
+        nperseg=nperseg, noverlap=noverlap,
+        window='hann'
+    )
+    
+    # Limit to frequency range of interest
+    freq_mask = f_spec <= 3.0
+    
+    im = ax2.pcolormesh(
+        t_spec, f_spec[freq_mask], 
+        10 * np.log10(Sxx[freq_mask, :] + 1e-12),
+        shading='gouraud', cmap='viridis'
+    )
+    
+    # Overlay known frequencies
+    if known_frequencies:
+        for freq in known_frequencies:
+            ax2.axhline(freq, color='red', linestyle='--', linewidth=1.5, alpha=0.8)
+    
+    ax2.set_ylabel('Frequency (Hz)')
+    ax2.set_title('Spectrogram (Ground Truth) — Red dashed = known oscillation frequencies')
+    plt.colorbar(im, ax=ax2, label='Power (dB)')
+    ax2.set_xlim(t[0], t[-1])
+    
+    # =========================================
+    # 3. Detected modes per segment
+    # =========================================
+    ax3 = fig.add_subplot(4, 1, 3)
+    
+    if trace_result:
+        segment_times = trace_result.segment_times
+        modes_per_segment = trace_result.modes_per_segment
+        
+        # Scatter plot of detected modes
+        for i, (seg_t, modes) in enumerate(zip(segment_times, modes_per_segment)):
+            if len(modes) > 0:
+                ax3.scatter([seg_t] * len(modes), modes, c='blue', s=30, alpha=0.7)
+        
+        # Overlay known frequencies
+        if known_frequencies:
+            for freq in known_frequencies:
+                ax3.axhline(freq, color='red', linestyle='--', linewidth=1.5, alpha=0.8, 
+                           label=f'Known: {freq} Hz' if freq == known_frequencies[0] else None)
+        
+        ax3.set_ylabel('Detected Mode (Hz)')
+        ax3.set_title('TDA Mode Detection per Segment — Blue dots = detected, Red dashed = known')
+        ax3.set_ylim(0, 3.0)
+        ax3.set_xlim(t[0], t[-1])
+        ax3.legend(loc='upper right')
+    
+    # =========================================
+    # 4. Cumulative drift comparison
+    # =========================================
+    ax4 = fig.add_subplot(4, 1, 4)
+    
+    method_colors = {
+        'classical': ('blue', 'Euclidean (L2)'),
+        'swap_test': ('orange', 'Swap Test'),
+        'trace_distance_classical': ('green', 'Trace Classical (L1)'),
+        'trace_distance_quantum': ('red', 'Trace Quantum'),
+    }
+    
+    for method, (color, label) in method_colors.items():
+        if method in results.results_by_method:
+            result = results.results_by_method[method]
+            ax4.plot(result.segment_times, result.cumulative_drift, 
+                    color=color, linewidth=2, label=label)
+    
+    ax4.set_xlabel('Time (s)')
+    ax4.set_ylabel('Cumulative Drift')
+    ax4.set_title('Cumulative Drift by Method')
+    ax4.legend(loc='upper left')
+    ax4.set_xlim(t[0], t[-1])
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"Saved: {save_path}")
+    
+    plt.show()
+    
+    return fig
+
+
+def quick_benchmark(
+    signal_path: str,
+    metadata_path: str, 
+    results: RealDataExperimentResults,
+    save_path: Optional[str] = None,
+):
+    """One-liner benchmark."""
+    return benchmark_visualization(
+        signal_path, metadata_path, results,
+        pmu_id=results.config.pmu_id,
+        save_path=save_path,
+    )

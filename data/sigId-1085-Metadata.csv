@@ -1,0 +1,2 @@
+ID, Data Source, Description, Device/site, Event Tags, Sensor, Rate (Hz), Event Date, Time (UTC), Wave Start, Wave End, Duration (s)
+1085, Provider 9,"Number of measuring PMUs: 4; Oscillation frequency: 0.1Hz and harmonics", , Events::System Event/Condition::Oscillation, PMU, 30.0, 2016-05-01, 20:00:00.000000, 20:00:00.000000, 20:13:59.967000, 839.967

@@ -3,7 +3,7 @@ __pycache__/
 *.py[codz]
 *$py.class
 *html
-*data
+results.txt
 
 
 # C extensions
@@ -209,8 +209,8 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 old/
-figures/
 *.pdf
 __pycache__
 .DS_Store
-report_files
+*_files
+

@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 280">
+  <style>
+    .wire { stroke: #333; stroke-width: 2; fill: none; }
+    .gate { fill: #e8f4fc; stroke: #0077b6; stroke-width: 2; }
+    .gate-text { font-family: 'Times New Roman', serif; font-size: 18px; text-anchor: middle; dominant-baseline: middle; }
+    .label { font-family: 'Times New Roman', serif; font-size: 16px; dominant-baseline: middle; }
+    .ket { font-family: 'Times New Roman', serif; font-size: 16px; font-style: italic; }
+    .control-dot { fill: #333; }
+    .swap-x { stroke: #0077b6; stroke-width: 3; fill: none; }
+    .measure { fill: #fff; stroke: #333; stroke-width: 2; }
+  </style>
+  
+  <!-- Title -->
+  <text x="300" y="25" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold">Swap Test Circuit for Inner Product Estimation</text>
+  
+  <!-- Wire labels -->
+  <text x="30" y="80" class="ket">|0⟩</text>
+  <text x="30" y="150" class="ket">|ψ₁⟩</text>
+  <text x="30" y="220" class="ket">|ψ₂⟩</text>
+  
+  <!-- Register labels on right -->
+  <text x="555" y="80" class="label" font-size="12">ancilla</text>
+  <text x="555" y="150" class="label" font-size="12">register 1</text>
+  <text x="555" y="220" class="label" font-size="12">register 2</text>
+  
+  <!-- Quantum wires -->
+  <line x1="55" y1="80" x2="540" y2="80" class="wire"/>
+  <line x1="55" y1="150" x2="540" y2="150" class="wire"/>
+  <line x1="55" y1="220" x2="540" y2="220" class="wire"/>
+  
+  <!-- First Hadamard gate -->
+  <rect x="100" y="55" width="40" height="50" class="gate" rx="3"/>
+  <text x="120" y="80" class="gate-text">H</text>
+  
+  <!-- Control dot for CSWAP -->
+  <circle cx="250" cy="80" r="8" class="control-dot"/>
+  
+  <!-- Vertical line from control to swap -->
+  <line x1="250" y1="88" x2="250" y2="220" class="wire"/>
+  
+  <!-- SWAP gate visualization - X marks -->
+  <g transform="translate(250, 150)">
+    <line x1="-12" y1="-12" x2="12" y2="12" class="swap-x"/>
+    <line x1="-12" y1="12" x2="12" y2="-12" class="swap-x"/>
+    <circle cx="0" cy="0" r="18" fill="none" stroke="#0077b6" stroke-width="2"/>
+  </g>
+  
+  <g transform="translate(250, 220)">
+    <line x1="-12" y1="-12" x2="12" y2="12" class="swap-x"/>
+    <line x1="-12" y1="12" x2="12" y2="-12" class="swap-x"/>
+    <circle cx="0" cy="0" r="18" fill="none" stroke="#0077b6" stroke-width="2"/>
+  </g>
+  
+  <!-- Vertical line connecting the two swap positions -->
+  <line x1="250" y1="168" x2="250" y2="202" class="wire"/>
+  
+  <!-- Second Hadamard gate -->
+  <rect x="350" y="55" width="40" height="50" class="gate" rx="3"/>
+  <text x="370" y="80" class="gate-text">H</text>
+  
+  <!-- Measurement gate -->
+  <rect x="450" y="55" width="50" height="50" class="measure" rx="3"/>
+  <path d="M 460 95 Q 475 70 490 95" fill="none" stroke="#333" stroke-width="1.5"/>
+  <line x1="475" y1="72" x2="485" y2="62" stroke="#333" stroke-width="1.5"/>
+  
+  <!-- Gate labels below -->
+  <text x="120" y="120" text-anchor="middle" font-family="Arial" font-size="11" fill="#666">Step 1</text>
+  <text x="250" y="255" text-anchor="middle" font-family="Arial" font-size="11" fill="#666">Step 2: CSWAP</text>
+  <text x="370" y="120" text-anchor="middle" font-family="Arial" font-size="11" fill="#666">Step 3</text>
+  <text x="475" y="120" text-anchor="middle" font-family="Arial" font-size="11" fill="#666">Step 4</text>
+  
+</svg>

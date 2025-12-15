@@ -1,0 +1,173 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700">
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#4A90D9;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#357ABD;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#5CB85C;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#449D44;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="purpleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#9B59B6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8E44AD;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="orangeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#F39C12;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#E67E22;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Title -->
+  <text x="500" y="30" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#333">
+    Quantum-Enhanced TDA Pipeline for Oscillation Mode Drift Detection
+  </text>
+  
+  <!-- Signal Processing Section -->
+  <rect x="50" y="60" width="900" height="120" rx="10" fill="#f8f9fa" stroke="#dee2e6" stroke-width="2"/>
+  <text x="70" y="85" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#666">SIGNAL PROCESSING</text>
+  
+  <!-- Raw Signal -->
+  <rect x="80" y="100" width="120" height="50" rx="5" fill="url(#blueGrad)"/>
+  <text x="140" y="130" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="white">Raw Signal x(t)</text>
+  
+  <!-- Arrow -->
+  <line x1="200" y1="125" x2="240" y2="125" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Sampling -->
+  <rect x="250" y="100" width="120" height="50" rx="5" fill="url(#blueGrad)"/>
+  <text x="310" y="122" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="white">Sampling</text>
+  <text x="310" y="138" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">fs = 30 Hz</text>
+  
+  <!-- Arrow -->
+  <line x1="370" y1="125" x2="410" y2="125" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Segmentation -->
+  <rect x="420" y="100" width="140" height="50" rx="5" fill="url(#blueGrad)"/>
+  <text x="490" y="122" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="white">Segmentation</text>
+  <text x="490" y="138" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">J = 11 segments</text>
+  
+  <!-- Arrow -->
+  <line x1="560" y1="125" x2="600" y2="125" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Welch PSD -->
+  <rect x="610" y="100" width="140" height="50" rx="5" fill="url(#blueGrad)"/>
+  <text x="680" y="122" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="white">Welch PSD</text>
+  <text x="680" y="138" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">pⱼ ∈ ℝ¹²⁹</text>
+  
+  <!-- Arrow -->
+  <line x1="750" y1="125" x2="790" y2="125" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- PSD Vectors -->
+  <rect x="800" y="100" width="120" height="50" rx="5" fill="url(#blueGrad)"/>
+  <text x="860" y="122" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="white">{p₁, p₂, ..., pⱼ}</text>
+  <text x="860" y="138" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">PSD vectors</text>
+  
+  <!-- Split arrow down -->
+  <line x1="860" y1="150" x2="860" y2="190" stroke="#333" stroke-width="2"/>
+  <line x1="860" y1="190" x2="350" y2="190" stroke="#333" stroke-width="2"/>
+  <line x1="860" y1="190" x2="650" y2="190" stroke="#333" stroke-width="2"/>
+  <line x1="350" y1="190" x2="350" y2="220" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <line x1="650" y1="190" x2="650" y2="220" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Left Branch: Mode Detection -->
+  <rect x="50" y="230" width="400" height="280" rx="10" fill="#e8f5e9" stroke="#a5d6a7" stroke-width="2"/>
+  <text x="70" y="255" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#2e7d32">MODE DETECTION (per segment)</text>
+  <text x="70" y="275" font-family="Arial, sans-serif" font-size="11" fill="#666">Distance metric independent</text>
+  
+  <!-- Log Transform -->
+  <rect x="100" y="295" width="130" height="45" rx="5" fill="url(#greenGrad)"/>
+  <text x="165" y="322" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="white">log₁₀(pⱼ)</text>
+  
+  <!-- Arrow -->
+  <line x1="230" y1="318" x2="270" y2="318" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Negate -->
+  <rect x="280" y="295" width="130" height="45" rx="5" fill="url(#greenGrad)"/>
+  <text x="345" y="322" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="white">Negate: −log(pⱼ)</text>
+  
+  <!-- Arrow down -->
+  <line x1="345" y1="340" x2="345" y2="370" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Cubical Complex -->
+  <rect x="230" y="380" width="180" height="45" rx="5" fill="url(#greenGrad)"/>
+  <text x="320" y="400" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="white">1D Cubical Complex</text>
+  <text x="320" y="415" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">(Gudhi)</text>
+  
+  <!-- Arrow down -->
+  <line x1="320" y1="425" x2="320" y2="445" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- H0 Persistence -->
+  <rect x="230" y="455" width="180" height="45" rx="5" fill="url(#greenGrad)"/>
+  <text x="320" y="482" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="white">H0 Persistence</text>
+  
+  <!-- Right Branch: Regime Detection -->
+  <rect x="500" y="230" width="450" height="280" rx="10" fill="#f3e5f5" stroke="#ce93d8" stroke-width="2"/>
+  <text x="520" y="255" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#7b1fa2">REGIME CHANGE DETECTION (across segments)</text>
+  <text x="520" y="275" font-family="Arial, sans-serif" font-size="11" fill="#666">Distance metric dependent</text>
+  
+  <!-- Distance Metrics Box -->
+  <rect x="530" y="295" width="180" height="100" rx="5" fill="url(#purpleGrad)"/>
+  <text x="620" y="315" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="white">Distance Metric</text>
+  <text x="620" y="335" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">• Euclidean (L2)</text>
+  <text x="620" y="350" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">• Swap Test (quantum L2)</text>
+  <text x="620" y="365" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">• Trace Classical (L1)</text>
+  <text x="620" y="380" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">• Trace Quantum (L1)</text>
+  
+  <!-- Arrow -->
+  <line x1="710" y1="345" x2="750" y2="345" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Distance Matrix -->
+  <rect x="760" y="295" width="160" height="55" rx="5" fill="url(#purpleGrad)"/>
+  <text x="840" y="318" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="white">Distance Matrix</text>
+  <text x="840" y="338" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">D ∈ ℝ¹¹ˣ¹¹</text>
+  
+  <!-- Arrow down -->
+  <line x1="840" y1="350" x2="840" y2="375" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Sequential Distances -->
+  <rect x="760" y="385" width="160" height="55" rx="5" fill="url(#purpleGrad)"/>
+  <text x="840" y="408" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="white">Sequential Distance</text>
+  <text x="840" y="428" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">dᵢ = D[i, i+1]</text>
+  
+  <!-- Arrow down -->
+  <line x1="840" y1="440" x2="840" y2="465" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Threshold -->
+  <rect x="760" y="475" width="160" height="30" rx="5" fill="url(#purpleGrad)"/>
+  <text x="840" y="495" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">dᵢ > μ + α·σ ?</text>
+  
+  <!-- Outputs Section -->
+  <rect x="50" y="530" width="900" height="100" rx="10" fill="#fff3e0" stroke="#ffcc80" stroke-width="2"/>
+  <text x="70" y="555" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#e65100">OUTPUTS</text>
+  
+  <!-- Arrow from Mode Detection -->
+  <line x1="320" y1="510" x2="320" y2="570" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Arrow from Regime Detection -->
+  <line x1="840" y1="510" x2="840" y2="570" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Mode Frequencies Output -->
+  <rect x="200" y="580" width="200" height="40" rx="5" fill="url(#orangeGrad)"/>
+  <text x="300" y="600" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="white">Mode Frequencies</text>
+  <text x="300" y="615" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">{f₁, f₂, ...} per segment</text>
+  
+  <!-- Regime Changes Output -->
+  <rect x="720" y="580" width="200" height="40" rx="5" fill="url(#orangeGrad)"/>
+  <text x="820" y="600" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="white">Regime Change Times</text>
+  <text x="820" y="615" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">t = 90s (mode drift)</text>
+  
+  <!-- Key insight box -->
+  <rect x="420" y="570" width="250" height="55" rx="5" fill="#fff" stroke="#333" stroke-width="1" stroke-dasharray="5,3"/>
+  <text x="545" y="590" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="#333">KEY FINDING:</text>
+  <text x="545" y="605" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#666">Metric geometry (L1 vs L2) affects</text>
+  <text x="545" y="618" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#666">regime detection more than quantum noise</text>
+  
+  <!-- Footer -->
+  <text x="500" y="680" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#999">
+Distance Metric Geometry for Regime Detection in Synchrophasor Data: Comparing Classical and Quantum-Inspired Approaches
+  </text>
+</svg>

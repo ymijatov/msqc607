@@ -1,1358 +1,566 @@
 # Distance Metric Geometry for Regime Detection in Synchrophasor Data: Comparing Classical and Quantum-Inspired Approaches
 
 by Yekaterina Mijatovic
+
 ---
 
 ## **Abstract**
 
-Power system oscillations require continuous monitoring to detect anomalies that could indicate impending instability. We investigate whether quantum-inspired distance metrics offer advantages for detecting regime changes in synchrophasor data over classical ones, comparing four approaches: classical Euclidean distance, quantum swap test (L2-like), classical trace distance (L1), and quantum-sampled trace distance. Using both synthetic signals with controlled mode drift and real PMU data from the Grid Event Signature Library (GESL), we find that the optimal metric depends on the oscillation phenomenon type. Euclidean (L2) distance excels at detecting amplitude excitation events—sudden increases in oscillation energy—while trace distance (L1), by normalizing PSDs to probability distributions, is better suited for detecting frequency redistribution where modes migrate without amplitude change. Metric geometry (L1 vs L2) has greater impact on detection performance than quantum vs classical computation. Quantum sampling introduces noise that can push marginal cases across detection thresholds, a stochastic amplification effect. We use H0 persistence on 1D PSD functions for mode detection, which operates independently of the distance metric and successfully identifies known oscillation frequencies within one frequency bin of ground truth.
-
-## **Hypothesis**
-
-The choice of distance metric geometry fundamentally affects regime change detection in power system oscillation data, but no single metric dominates across all oscillation phenomena. L2-based metrics (Euclidean, swap test) excel at detecting amplitude excitation events—sudden increases in modal energy that characterize many real-world grid disturbances. L1-based metrics (trace distance), by normalizing PSDs to probability distributions, filter amplitude variations and are better suited for detecting frequency redistribution where modes migrate in frequency space without significant amplitude change. The optimal metric thus depends on the physical phenomenon being monitored. Quantum computation introduces sampling noise that may affect detection outcomes at threshold boundaries, but the primary driver of performance differences is metric geometry, not quantum effects.
-
-## **Methodology and Pipeline**
-
-![](figures/pipeline_diagram.svg)
-
-### **Section 1: Signal Representation and PSD Feature Extraction**
-
-#### **1.1 Physical Model: Damped Oscillatory Modes**
-
-Power system oscillations can be modeled as a superposition of damped sinusoids. Each mode represents a specific oscillation pattern in the grid.
-
-**Single mode representation:**
-
-$$x_k(t) = A_k e^{-\sigma_k t} \cos(2\pi f_k t + \phi_k)$$
-
-where:
-
-- $A_k$ = amplitude (initial magnitude)
-- $f_k$ = frequency in Hz (oscillation rate)
-- $\sigma_k$ = damping coefficient (decay rate)
-- $\phi_k$ = phase offset
-- $t$ = time in seconds
-
-**Multi-mode signal:**
-
-$$x(t) = \sum_{k=1}^{M} A_k e^{-\sigma_k t} \cos(2\pi f_k t + \phi_k) + n(t)$$
-
-where:
-
-- $M$ = number of modes
-- $n(t)$ = noise process (usually white Gaussian)
-
-![](figures/signal.png)
-
-#### **1.2 Discrete Sampling**
-
-Real systems measure at discrete time intervals $\Delta t = 1/f_s$ where $f_s$ is the sampling frequency.
-
-**Discrete signal:**
-
-$$x[n] = x(n\Delta t) = \sum_{k=1}^{M} A_k e^{-\sigma_k n\Delta t} \cos(2\pi f_k n\Delta t + \phi_k) + n[n]$$
-
-for $n = 0, 1, 2, \ldots, N-1$ where $N$ is the number of samples.
-
-**In our case:** $f_s = 30$ Hz, $\Delta t = 1/30$ seconds.
-
-#### **1.3 Time-Frequency Analysis Motivation**
-
-**Question:** Why not use the raw signal $x[n]$ directly for TDA?
-
-**Answer:** Because we care about *frequency content*, not temporal structure. Two segments might have different phases or amplitudes but the same underlying modes. We need a representation that captures spectral characteristics.
-
-**Goal:** Transform $x[n] \rightarrow$ frequency domain representation that is:
-
-1. Phase-invariant
-2. Captures energy distribution across frequencies
-3. Robust to amplitude scaling
-
-**Solution:** Power Spectral Density (PSD)
+Power system oscillations require continuous monitoring to detect anomalies that could indicate impending instability. We investigate whether quantum-inspired distance metrics offer advantages for detecting regime changes in synchrophasor data, comparing four approaches: classical Euclidean distance (L2), quantum swap test (L2-like), classical trace distance (L1), and quantum-sampled trace distance. Using both synthetic signals with controlled mode drift and real PMU data from the Grid Event Signature Library (GESL), we find that the choice of metric geometry - L1 versus L2 - has greater impact on detection performance than quantum versus classical computation. Euclidean (L2) distance excels at detecting amplitude excitation events, while trace distance (L1), by normalizing PSDs to probability distributions, is better suited for detecting frequency redistribution where modes migrate without amplitude change. Quantum sampling introduces noise that can push marginal cases across detection thresholds, a stochastic amplification effect without accuracy benefit over classical methods. We use H0 persistence on 1D PSD functions for mode detection, which operates independently of the distance metric and successfully identifies known oscillation frequencies within 0.04 Hz mean error of ground truth.
 
 ---
 
-#### **1.4 Power Spectral Density: Mathematical Definition**
+## 1. Introduction
 
-The **Power Spectral Density** $S(f)$ describes how the power of a signal is distributed across frequency components.
+### 1.1 Scientific Motivation
 
-**Continuous-time definition (Wiener-Khinchin theorem):**
+Modern power grids are complex, interconnected systems operating near stability limits to maximize efficiency. Power system oscillations - periodic variations in electrical quantities such as voltage, current, and frequency - provide crucial insights into system stability and can indicate emerging problems before catastrophic failures occur.
 
-$$S(f) = \int_{-\infty}^{\infty} R(\tau) e^{-i2\pi f \tau} d\tau$$
+Oscillation modes in power systems are characterized by their frequency and damping:
 
-where $R(\tau) = \mathbb{E}[x(t)x(t+\tau)]$ is the autocorrelation function.
+- **Inter-area oscillations** (0.2–0.8 Hz): Large groups of generators in different geographical areas swinging against each other
+- **Local plant modes** (0.8–2 Hz): Generators within a single power plant or area
+- **Control modes** (2–5 Hz): Associated with power system stabilizers and control equipment
 
-**Discrete-time definition:**
+![Power System Oscillation Mode Frequency Ranges](figures/oscillation_modes.png)
+*Figure 1: Power system oscillation mode frequency ranges. Inter-area modes (0.2–0.8 Hz) represent the largest-scale grid dynamics and are the primary target for early warning detection. The GESL signals in this study contain predominantly inter-area oscillations (0.55, 0.75 Hz).*
 
-For a finite discrete signal $x[n]$, $n = 0, \ldots, N-1$, the periodogram estimator is:
+Traditional methods for oscillation mode detection rely on model-based approaches (eigenvalue analysis) or signal processing techniques (Prony analysis, Matrix Pencil method). These methods face challenges including model dependency, noise sensitivity, manual tuning requirements, and computational complexity with high-dimensional datasets.
 
-$$\hat{S}(f_k) = \frac{\Delta t}{N} \left| \sum_{n=0}^{N-1} x[n] e^{-i2\pi k n / N} \right|^2$$
+### 1.2 Topological Data Analysis for Power Systems
 
-where $f_k = k/(N\Delta t)$ for $k = 0, 1, \ldots, N/2$ (due to Nyquist).
+Recent work by Mishra & Vanfretti (2025) introduced a topological data analysis (TDA) approach for automatic mode detection from synchrophasor measurements. Their method offers several advantages: it is model-free (works directly on measurement data), noise-robust (TDA naturally filters transient noise through persistence), automated (minimal manual parameter tuning), and provides structural insight into spectral data geometry.
 
-**Problem with periodogram:** High variance. The estimator is inconsistent - variance doesn't decrease as $N \rightarrow \infty$.
+The key insight is that oscillation modes create persistent topological features in the spectral point cloud, while noise produces transient features that quickly disappear. By computing persistent homology - tracking when topological features appear and disappear as a distance parameter increases - we can distinguish real physical phenomena from measurement artifacts.
 
----
+### 1.3 Quantum Computing Opportunities and Limitations
 
-#### **1.5 Welch's Method: Variance Reduction**
+Quantum computing offers potential advantages for distance computation through amplitude encoding (representing K-dimensional vectors in log₂K qubits) and quantum parallelism. The swap test circuit can estimate inner products between quantum states, from which Euclidean distances can be derived. Amplitude encoding enables quantum sampling from probability distributions encoded as quantum states.
 
-Welch's method reduces variance by:
+**The Dimensionality Argument**
 
-1. Dividing signal into overlapping segments
-2. Windowing each segment
-3. Computing periodogram for each
-4. Averaging the periodograms
+The theoretical appeal of quantum distance computation lies in amplitude encoding's exponential compression. A classical PSD vector with K dimensions requires storing K floating-point values. Amplitude encoding represents the same information as:
 
-**Algorithm:**
+$$|\psi\rangle = \sum_{k=0}^{K-1} \sqrt{p_k} |k\rangle$$
 
-**Step 1:** Divide $x[n]$ into $L$ overlapping segments of length $M$:
+which requires only $\lceil \log_2 K \rceil$ qubits. For our 128-dimensional PSD vectors, this means 7 qubits instead of 128 classical values - an 18X compression. For large-scale grid analysis with thousands of PMUs producing high-resolution spectra, this compression becomes more attractive.
 
-$$x_i[n] = x[n + iD], \quad n = 0, \ldots, M-1$$
+However, this theoretical advantage faces practical barriers:
 
-where $D$ is the hop size (typically $D = M/2$ for 50% overlap).
+1. **State preparation cost**: Encoding an arbitrary K-dimensional vector requires O(K) gates, negating the storage advantage for distance computation
+2. **Measurement collapse**: Each measurement destroys the quantum state, requiring re-preparation for repeated queries
+3. **Shot noise**: Finite measurement counts introduce variance that scales as $1/\sqrt{N_{shots}}$
 
-**Step 2:** Apply window function $w[n]$ to each segment:
+For the problem sizes in this study (K ≈ 100, segments ≈ 50), classical computation is trivially fast (<0.1s). The quantum dimensionality advantage would only become relevant for massive-scale analysis - thousands of PMUs with fine spectral resolution - where classical distance matrix computation becomes expensive. Our experiments establish the accuracy baseline for that future regime.
 
-$$\tilde{x}_i[n] = x_i[n] \cdot w[n]$$
+**Practical Limitations**
 
-Common windows: Hanning, Hamming, Blackman.
+Finite shot counts in quantum sampling introduce variance in distance estimates - more shots reduce this variance, but practical limits remain. The quantum algorithms provide no accuracy benefit over classical counterparts - they compute the same mathematical quantities with added sampling noise. Our experiments use Qiskit simulation rather than actual quantum hardware, so computational timing comparisons are not meaningful (classical simulation of quantum circuits is inherently slow due to exponential state space). The relevant comparison is accuracy, where quantum methods show no advantage.
 
-**Hanning window:**
+The value of exploring quantum approaches lies not in immediate practical advantage but in: (1) understanding how different distance geometries affect regime detection, (2) establishing baseline accuracy comparisons for when quantum hardware matures, and (3) exploring whether quantum sampling noise has any beneficial stochastic effects.
 
-$$w[n] = 0.5\left(1 - \cos\left(\frac{2\pi n}{M-1}\right)\right)$$
+### 1.4 Research Gap and Contribution
 
-**Step 3:** Compute periodogram for each windowed segment:
+1. **Systematic comparison of L1 vs L2 metric families** for regime detection in synchrophasor data, demonstrating that metric geometry matters more than computational paradigm
 
-$$\hat{S}_i(f_k) = \frac{\Delta t}{MU} \left| \sum_{n=0}^{M-1} \tilde{x}_i[n] e^{-i2\pi k n / M} \right|^2$$
+2. **Characterization of what each metric detects**: L2 responds to amplitude changes; L1 responds to frequency redistribution. These are complementary capabilities for different oscillation phenomena.
 
-where $U = \frac{1}{M}\sum_{n=0}^{M-1} w[n]^2$ is the window normalization factor.
+3. **Empirical validation of TDA mode detection** on real GESL data across six signals, achieving ~0.04 Hz mean error against known oscillation frequencies
 
-**Step 4:** Average over all segments:
+4. **Demonstration that quantum sampling adds noise without accuracy benefit**: Establishing baseline for future quantum algorithm evaluation as hardware matures
 
-$$\hat{S}_{Welch}(f_k) = \frac{1}{L} \sum_{i=0}^{L-1} \hat{S}_i(f_k)$$
-
-**Variance reduction:** $\text{Var}(\hat{S}_{Welch}) \approx \frac{1}{L} \text{Var}(\hat{S}_{periodogram})$
-
----
-
-#### **1.6 PSD as Feature Vector**
-
-After computing Welch's PSD, we have:
-
-$$\mathbf{p} = [\hat{S}(f_0), \hat{S}(f_1), \ldots, \hat{S}(f_{K-1})]^T \in \mathbb{R}^K$$
-
-where $K$ is the number of frequency bins (determined by FFT length).
-
-**Properties:**
-
-1. **Dimensionality:** Typically $K = M/2 + 1$ where $M$ is segment length
-   - In this case: varying based on segment duration
-
-2. **Non-negative:** $\hat{S}(f_k) \geq 0$ for all $k$
-
-3. **Physical units:** Power per Hz (e.g., V²/Hz for voltage signals)
-
-4. **Frequency resolution:** $\Delta f = f_s / M$
-
-5. **Nyquist limit:** Maximum frequency is $f_s/2$, so 15Hz in this case
+5. **Practical recommendation**: Use both L1 and L2 metrics in parallel for comprehensive regime monitoring - they detect different event types
 
 ---
 
-#### **1.7 Segmentation for Temporal Analysis**
+## 2. Methodology Overview
 
-To track evolution over time, we divide the full signal into temporal segments:
+Our pipeline consists of four stages: signal segmentation, PSD feature extraction, distance matrix computation, and regime/mode detection. Full mathematical details are provided in **Appendix A**.
 
-$$\text{Segment } j: \quad x_j[n], \quad n \in [t_j, t_j + T_{seg}]$$
+![Pipeline Diagram](figures/pipeline_diagram.svg)
+*Figure 2: Analysis pipeline overview. Key insight: the regime change detection branch (right) reveals that metric geometry (L1 vs L2) determines what events are detected. Quantum vs classical computation within each family produces nearly identical results - the choice of distance metric dominates.*
 
-where $T_{seg}$ is the segment duration.
+### 2.1 Signal Processing
 
-**For each segment:**
+Raw synchrophasor signals are divided into 15-second temporal segments with 50% overlap. For each segment, we compute the Power Spectral Density (PSD) using Welch's method with a Hanning window, yielding a 129-dimensional feature vector representing power distribution across frequency bins (0.12–15 Hz range, ~0.12 Hz resolution).
 
-1. Apply Welch's method → $\mathbf{p}_j \in \mathbb{R}^K$
-2. This gives us a sequence: $\{\mathbf{p}_1, \mathbf{p}_2, \ldots, \mathbf{p}_J\}$
+### 2.2 Distance Metrics
 
-**In this case:** $T_{seg} = 15$ seconds, yielding 11 segments for a 180-second signal.
+We compare four distance computation methods organized into two metric families:
 
----
+**L2 Family (Euclidean geometry):**
 
-#### **1.8 Why PSD Vectors for TDA?**
+- **Classical Euclidean**: Standard L2 norm between PSD vectors
+- **Quantum Swap Test**: Encodes PSDs as quantum states, uses swap test circuit to estimate inner product, derives L2 distance
 
-**Advantages:**
+**L1 Family (Trace distance geometry):**
 
-1. **Phase invariance:** PSD only depends on magnitude spectrum, not phase
-2. **Energy representation:** Captures where oscillation energy is concentrated
-3. **Dimensionality reduction:** Signal with $N = 5400$ samples → PSD with $K \approx 225$ bins
-4. **Physical interpretability:** Each frequency bin corresponds to a potential oscillation mode
-5. **Suitable for distance metrics:** Vectors in $\mathbb{R}^K$ enable geometric comparisons
+- **Classical Trace Distance**: Normalizes PSDs to probability distributions, computes total variation distance (bounded [0,1])
+- **Quantum-Sampled Trace Distance**: Encodes distributions as quantum states, samples to estimate probabilities, computes trace distance on empirical estimates
 
-**What we're comparing:**
-- Similar PSDs → similar frequency content → similar oscillation modes
-- Different PSDs → frequency shift or amplitude redistribution → mode drift
+The key distinction: L2 metrics respond to absolute magnitude changes in PSD values, while L1 metrics (after normalization) respond only to redistribution of relative power across frequencies.
 
----
+### 2.3 Regime Detection
 
-**Summary of Section 1:**
+From the pairwise distance matrix, we compute:
 
-$$\boxed{\text{Raw signal } x(t) \xrightarrow{\text{Sampling}} x[n] \xrightarrow{\text{Segmentation}} \{x_j[n]\} \xrightarrow{\text{Welch PSD}} \{\mathbf{p}_j\} \in \mathbb{R}^K}$$
+- **Sequential distances**: Distance between consecutive segments, detecting sudden changes
+- **Cumulative drift**: Distance from initial state, tracking gradual evolution
+- **Regime change detection**: Flag transitions where sequential distance exceeds $\mu + 1 \sigma$ threshold
 
-Each PSD vector $\mathbf{p}_j$ represents the frequency content of segment $j$, ready for distance computation and topological analysis.
+### 2.4 Mode Detection via TDA
 
-
-### **Parameters in Simulated Data Pipeline**
-
-#### **Given:**
-- Sampling frequency: $f_s = 30$ Hz
-- Total signal duration: $T_{total} = 180$ seconds
-- Segment duration: $T_{seg} = 15$ seconds
-- Segment overlap: 50% (typical)
-
-#### **Dimensions:**
-
-$$\boxed{\begin{aligned}
-K &= 129 \text{ frequency bins} \\
-J &= 12 \text{ temporal segments} \\
-\mathbf{p}_j &\in \mathbb{R}^{129} \\
-\mathbf{D} &\in \mathbb{R}^{12 \times 12}
-\end{aligned}}$$
-
-**Frequency resolution:** $\Delta f = 0.117188$ Hz (exactly $30/256$)
+Independent of distance metrics, we apply H0 persistent homology to each segment's PSD (viewed as a 1D function). Superlevel set filtration identifies peaks as persistent connected components. Peaks with persistence above the 80th percentile threshold are classified as detected oscillation modes.
 
 ---
 
-#### **Concrete Example: $\mathbf{p}_1$ Structure**
+## 3. Simulated Data Results
 
-Looking at Segment 1 (t = 0-15s), the PSD vector has:
+### 3.1 Experimental Design
 
-**Sparse representation:** Only 9 significant values out of 129 bins!
+We generated synthetic synchrophasor signals with three oscillation modes (0.5 Hz, 1.2 Hz, 2.5 Hz) and controlled mode drift. At t=90s (of 180s total), one mode begins frequency drift of 0.5 Hz. We tested three scenarios:
 
-```
-p₁[0]   = 0.00081318  (DC component)
-p₁[3]   = 0.00576960  (sidelobe)
-p₁[4]   = 0.05349801  ← 0.5 Hz mode (PEAK)
-p₁[5]   = 0.02807838  (sidelobe)
-p₁[9]   = 0.00215955  (sidelobe)
-p₁[10]  = 0.01634684  ← 1.2 Hz mode (PEAK)
-p₁[11]  = 0.00814669  (sidelobe)
-p₁[21]  = 0.00167258  ← 2.5 Hz mode (PEAK)
-p₁[22]  = 0.00113466  (sidelobe)
-All other 120 bins ≈ 10⁻⁵ (noise floor)
-```
+- **Strong mode drift**: 0.5 Hz mode drifts (highest amplitude)
+- **Medium mode drift**: 1.2 Hz mode drifts
+- **Weak mode drift**: 2.5 Hz mode drifts (lowest amplitude)
+
+![Synthetic Signal](figures/signal.png)
+*Figure 3: Synthetic signal with three oscillation modes (0.5, 1.2, 2.5 Hz) and controlled mode drift at t=90s. This controlled environment allows direct comparison of detection methods against known ground truth.*
+
+![PSD Structure](figures/psd_dimensions_verification.png)
+*Figure 4: PSD feature vector in log scale (left) and linear scale (right). The three peaks at 0.5, 1.2, and 2.5 Hz are clearly visible. Log scale reveals the full dynamic range; linear scale shows relative power distribution that L1 metrics respond to.*
+
+Each scenario was run for 20 trials with different noise realizations. The true transition time (t=90s) serves as ground truth for evaluating detection performance.
+
+### 3.2 Detection Performance
+
+**Table 1: Detection rates at true transition time (t=90s)**
+
+| Metric | Strong Mode | Medium Mode | Weak Mode |
+|--------|-------------|-------------|-----------|
+| Euclidean (L2) | 35% local max | 35% local max | 35% local max |
+| Swap Test (L2) | 35% local max | 25% local max | 25% local max |
+| Trace Classical (L1) | 30% local max | 30% local max | 30% local max |
+| Trace Quantum (L1) | 35% local max | 35% local max | 30% local max |
+
+*Table 1: Detection rates at true transition time (t=90s). No method dramatically outperforms others - all hover around 25-35%. The meaningful distinction is between metric families (L1 vs L2 sensitivity profiles), not computational paradigm (classical vs quantum produces near-identical results within each family).*
 
 **Key observations:**
 
-1. **Peak hierarchy:** 
-   - 0.5 Hz mode: PSD = 0.0535 (strongest)
-   - 1.2 Hz mode: PSD = 0.0163 (medium)
-   - 2.5 Hz mode: PSD = 0.0017 (weakest, will drift at $t=90$ seconds)
+1. **No method dramatically outperforms others** on detection rate - all hover around 25-35%
+2. **L2 family shows higher variance** in cumulative drift curves
+3. **L1 family shows smoother, more stable** drift trajectories
+4. **Quantum vs classical pairs track closely**: Swap Test ≈ Euclidean; Trace Quantum ≈ Trace Classical
 
-2. **Sparsity:** ~93% of vector is noise (120/129 bins)
+### 3.3 Metric Family Comparison
 
-3. **Sidelobes:** Each peak has neighboring bins due to spectral leakage from windowing
+**Table 2: Mean drift percentile at transition**
 
-4. **Dynamic range:** Max/Min $\approx 0.0535/0.0000024 \approx 22,000$ (log scale will help mitigate this)
+| Family | Strong Mode | Medium Mode | Weak Mode |
+|--------|-------------|-------------|-----------|
+| L2 (Euclidean) | 68.5% | 70.2% | 67.1% |
+| L1 (Trace) | 63.8% | 63.1% | 63.5% |
 
-![](figures/psd_dimensions_verification.png)
+*Table 2: Mean drift percentile at transition (higher = transition closer to peak drift). Both families perform above chance (50%), with L2 showing slightly higher percentiles but also higher variance. L1 is more consistent across mode strengths - note the tight clustering around 63%.*
 
-The plots show:
+![Three Mode Study Summary](figures/three_mode_study_summary.png)
+*Figure 5: L1 vs L2 metric families across three mode drift scenarios. Key observations: (1) Within each family, classical and quantum variants track closely - curves nearly overlap. (2) L2 (top) shows higher variance; L1 (bottom) is bounded and more consistent. (3) The difference between L1 and L2 exceeds the difference between classical and quantum.*
 
-- **Left (log scale):** All three modes visible as peaks above noise floor
-- **Right (linear, 0-5 Hz):** Clear peak structure with sidelobes
-- Red dashed lines mark true mode frequencies
-- Small frequency mismatch due to bin resolution (0.117 Hz)
+### 3.4 Computational Cost (Simulator)
 
----
+**Table 3: Computational cost per trial (simulated)**
 
-### **Section 2: Distance Metrics - Geometric Properties**
+| Method | Time per trial |
+|--------|---------------|
+| Classical Euclidean | 0.08s |
+| Swap Test (simulated) | 0.77s |
+| Trace Classical | 0.11s |
+| Trace Quantum (simulated) | 0.67s |
 
-This section is dedicated to different measures of similarity between PSD vectors $\mathbf{p}_i, \mathbf{p}_j \in \mathbb{R}^{129}$.
-
-#### **2.1 General Metric Properties**
-
-A function $d: \mathbb{R}^K \times \mathbb{R}^K \rightarrow \mathbb{R}$ is a **metric** (or distance function) if it satisfies:
-
-1. **Non-negativity:** $d(\mathbf{x}, \mathbf{y}) \geq 0$ for all $\mathbf{x}, \mathbf{y}$
-
-2. **Identity of indiscernibles:** $d(\mathbf{x}, \mathbf{y}) = 0 \iff \mathbf{x} = \mathbf{y}$
-
-3. **Symmetry:** $d(\mathbf{x}, \mathbf{y}) = d(\mathbf{y}, \mathbf{x})$
-
-4. **Triangle inequality:** $d(\mathbf{x}, \mathbf{z}) \leq d(\mathbf{x}, \mathbf{y}) + d(\mathbf{y}, \mathbf{z})$
-
-Both L1 and L2 satisfy these properties, but they induce **different geometries**.
+*Table 3: Computational cost per trial using Qiskit simulation. These timings reflect classical emulation overhead, not actual QPU performance. Simulator overhead is not representative of quantum algorithm efficiency - the meaningful comparison is accuracy, not speed within the context of this project.*
 
 ---
 
-#### **2.2 Euclidean Distance (L2 Norm)**
+## 4. Real Data Results (GESL)
 
-**Definition:**
+### 4.1 Dataset Description
 
-$$d_{L2}(\mathbf{p}_i, \mathbf{p}_j) = \|\mathbf{p}_i - \mathbf{p}_j\|_2 = \sqrt{\sum_{k=0}^{K-1} (p_i[k] - p_j[k])^2}$$
+We analyzed six signals from the Grid Event Signature Library (GESL), a public repository of labeled PMU recordings from actual grid events. Signals ranged from 300s to 840s duration, with known oscillation frequencies documented in metadata.
 
-For $K = 129$ bins.
+**Table 4: GESL signals analyzed**
 
-**Squared form (often used):**
+| Signal ID | Duration | Known Frequencies | Event Type |
+|-----------|----------|-------------------|------------|
+| 1015 | 300s (5 min) | 0.55 Hz | Inter-area mode |
+| 1032 | 420s (7 min) | 0.20, 0.55, 0.75 Hz | Multiple modes |
+| 1058 | 600s (10 min) | 0.75, 1.50, 0.10 Hz | Sustained oscillation |
+| 1084 | 780s (13 min) | 0.60, 0.75 Hz | Burst + sustained |
+| 1085 | 840s (14 min) | 0.10 Hz | Low-frequency mode |
+| 1232 | 720s (12 min) | 0.75 Hz | Amplitude variation |
 
-$$d_{L2}^2(\mathbf{p}_i, \mathbf{p}_j) = \sum_{k=0}^{128} (p_i[k] - p_j[k])^2$$
+*Table 4: GESL signals analyzed. Six real PMU recordings spanning 5-14 minutes with documented oscillation frequencies. Event types range from single inter-area modes to complex multi-mode interactions, providing diverse test cases for method validation.*
 
-**Properties:**
+### 4.2 Mode Detection Validation
 
-1. **Range:** $[0, \infty)$ - unbounded
-2. **Emphasizes large differences:** Squaring amplifies big deviations
-3. **Units:** (PSD units) since PSD has units of power/Hz
-4. **Geometric interpretation:** Straight-line distance in $\mathbb{R}^{129}$
+**Table 5: TDA mode detection accuracy**
 
-**Sensitivity:**
+| Signal | Known Freq | Detected | Abs Error | Rel Error |
+|--------|------------|----------|-----------|-----------|
+| 1015 | 0.55 Hz | 0.592 Hz | 0.042 Hz | 7.6% |
+| 1032 | 0.20 Hz | 0.237 Hz | 0.037 Hz | 18.5% |
+| 1032 | 0.55 Hz | 0.592 Hz | 0.042 Hz | 7.6% |
+| 1032 | 0.75 Hz | 0.710 Hz | 0.040 Hz | 5.3% |
+| 1058 | 0.10 Hz | 0.237 Hz | 0.137 Hz | 137.0%* |
+| 1058 | 0.75 Hz | 0.710 Hz | 0.040 Hz | 5.3% |
+| 1058 | 1.50 Hz | 1.539 Hz | 0.039 Hz | 2.6% |
+| 1084 | 0.60 Hz | 0.592 Hz | 0.008 Hz | **1.3%** |
+| 1084 | 0.75 Hz | 0.710 Hz | 0.040 Hz | 5.3% |
+| 1085 | 0.10 Hz | 0.237 Hz | 0.137 Hz | 137.0%* |
+| 1232 | 0.75 Hz | 0.710 Hz | 0.040 Hz | 5.3% |
 
-Euclidean distance tracks absolute magnitude changes. If a frequency bin's power increases from 0.001 to 0.051, the contribution to distance is proportional to that 0.05 difference. This means L2 responds to any change in PSD values - whether from actual mode drift or from amplitude fluctuations unrelated to oscillation dynamics.
+**Mean absolute error:** 0.036 Hz (excluding 0.1 Hz modes)
+**Mean relative error:** 6.2% (excluding 0.1 Hz modes)
 
----
+*Table 5: TDA mode detection accuracy with absolute and relative error. Mean relative error of 6.2% (excluding resolution-limited 0.1 Hz modes) validates H0 persistence as a reliable model-free mode identification method. Errors are bounded by frequency resolution (~0.12 Hz for 15s segments). The 0.1 Hz modes are at the resolution floor - 15s segments capture only 1.5 cycles, making reliable detection impossible regardless of method.*
 
-#### **2.3 Manhattan/Taxicab Distance (L1 Norm)**
+### 4.3 L1 vs L2 Behavioral Differences
 
-**Definition (raw form):**
-
-$$d_{L1}^{raw}(\mathbf{p}_i, \mathbf{p}_j) = \|\mathbf{p}_i - \mathbf{p}_j\|_1 = \sum_{k=0}^{K-1} |p_i[k] - p_j[k]|$$
-
-**Problem:** This is also unbounded and depends on absolute magnitudes.
-
-**For trace distance, we need probability distributions.**
-
----
-
-#### **2.3.1 Normalization to Probability Distributions**
-
-To use trace distance, we convert PSD vectors to probability distributions:
-
-$$\tilde{p}_i[k] = \frac{|p_i[k]|}{\sum_{m=0}^{K-1} |p_i[m]|}$$
-
-**Properties:**
-- $\tilde{p}_i[k] \geq 0$ for all $k$
-- $\sum_{k=0}^{K-1} \tilde{p}_i[k] = 1$ (normalization)
-- Interpretation: $\tilde{p}_i[k]$ = fraction of total power at frequency $k$
-
-**What normalization does:**
-- Removes absolute scale (amplitude information)
-- Focuses on **relative distribution** of power across frequencies
-- Two PSDs with same shape but different amplitudes → identical after normalization
-
----
-
-#### **2.3.2 Trace Distance (Normalized L1)**
-
-**Definition:**
-
-$$d_{trace}(\mathbf{p}_i, \mathbf{p}_j) = \frac{1}{2} \sum_{k=0}^{K-1} |\tilde{p}_i[k] - \tilde{p}_j[k]|$$
-
-The factor of $\frac{1}{2}$ comes from quantum mechanics (trace norm of density matrices).
-
-**Properties:**
-
-1. **Range:** $[0, 1]$ - **bounded!**
-   - $d = 0$: identical distributions
-   - $d = 1$: completely disjoint support (no overlap)
-
-2. **Emphasizes probability mass redistribution**
-   - Moving probability from one bin to another
-   - Insensitive to overall amplitude scaling
-
-3. **Units:** Dimensionless (probability is unitless)
-
-4. **Geometric interpretation:** Total variation distance
-
-**Connection to total variation:**
-
-$$d_{trace}(\tilde{p}_i, \tilde{p}_j) = \frac{1}{2} \text{TV}(\tilde{p}_i, \tilde{p}_j)$$
-
-where TV is the total variation distance between probability distributions.
-
----
-
-#### **2.4 Example Calculation**
-
-Let's compute both distances for a simple example.
-
-**Scenario:** Mode at 2.5 Hz doubles in amplitude (simulating drift)
-
-**Before (segment j):**
-```
-bin 20: 0.00026
-bin 21: 0.00167  ← peak
-bin 22: 0.00113
-... (other 126 bins with values)
-Total sum: 0.12154
-```
-
-**After (segment j+1):**
-```
-bin 20: 0.00052
-bin 21: 0.00334  ← peak (doubled!)
-bin 22: 0.00226
-... (other 126 bins same)
-Total sum: 0.12321
-```
-
-**L2 distance:**
-$$d_{L2}^2 = (0.00026 - 0.00052)^2 + (0.00167 - 0.00334)^2 + (0.00113 - 0.00226)^2 + \ldots$$
-
-$$\approx 0.000676 + 0.002789 + 0.001276 + \ldots \approx 0.00485$$
-
-$$d_{L2} \approx \sqrt{0.00485} \approx 0.0696$$
-
-**Normalized probabilities:**
-
-Before:
-```
-p̃[21] = 0.00167/0.12154 ≈ 0.0137 (1.37% of total power)
-```
-
-After:
-```
-p̃[21] = 0.00334/0.12321 ≈ 0.0271 (2.71% of total power)
-```
-
-**Trace distance:**
-At bin 21: $|\Delta \tilde{p}| \approx |0.0137 - 0.0271| = 0.0134$
-
-Total (summing all bins and dividing by 2): $d_{trace} \approx 0.0134$ (approximately, simplified)
-
-**Key difference:** L2 sees this as distance ~0.07, trace distance sees it as ~0.013.
-
-Why? Because trace distance asks: "What fraction of probability mass moved?" while L2 asks: "What's the magnitude of change?"
-
----
-
-#### **2.5 Why L1 and L2 Diverge Fundamentally**
-
-The key insight: **L1 and L2 measure different geometric properties.**
-
-**Theorem (Intuitive):** For vectors in $\mathbb{R}^K$, L1 and L2 distances can order point pairs differently. Specifically:
-
-- L2 is sensitive to **magnitude** of differences
-- L1 (trace distance after normalization) is sensitive to **redistribution** of mass
-
-**Concrete example demonstrating divergence:**
-
-Consider three PSD vectors:
-
-**Vector A (reference):**
-```
-[0.5, 0.3, 0.2, 0, 0, ..., 0]  (total = 1.0)
-```
-
-**Vector B (scaled):**
-```
-[1.0, 0.6, 0.4, 0, 0, ..., 0]  (total = 2.0, same shape)
-```
-
-**Vector C (redistributed):**
-```
-[0.3, 0.3, 0.2, 0.2, 0, ..., 0]  (total = 1.0, mass moved)
-```
-
-**L2 distances:**
-- $d_{L2}(A, B) = \sqrt{(0.5-1.0)^2 + (0.3-0.6)^2 + (0.2-0.4)^2} = \sqrt{0.25 + 0.09 + 0.04} = \sqrt{0.38} \approx 0.616$
-- $d_{L2}(A, C) = \sqrt{(0.5-0.3)^2 + (0.3-0.3)^2 + (0.2-0.2)^2 + (0-0.2)^2} = \sqrt{0.04 + 0 + 0 + 0.04} = \sqrt{0.08} \approx 0.283$
-
-**L2 ordering:** $A$ is closer to $C$ than to $B$ (0.283 < 0.616)
-
-**Trace distances (after normalization):**
-
-Normalized:
-- $\tilde{A} = [0.5, 0.3, 0.2, 0, ...]$
-- $\tilde{B} = [0.5, 0.3, 0.2, 0, ...]$ (same after normalization!)
-- $\tilde{C} = [0.3, 0.3, 0.2, 0.2, ...]$
-
-- $d_{trace}(\tilde{A}, \tilde{B}) = \frac{1}{2}\sum|0| = 0$ (identical distributions!)
-- $d_{trace}(\tilde{A}, \tilde{C}) = \frac{1}{2}(|0.5-0.3| + |0.3-0.3| + |0.2-0.2| + |0-0.2|) = \frac{1}{2}(0.2 + 0 + 0 + 0.2) = 0.2$
-
-**Trace ordering:** $A$ is identical to $B$ (distance = 0) and far from $C$ (distance = 0.2)
-
-**OPPOSITE orderings!**
-
----
-
-#### **2.6 Mathematical Explanation**
-
-**L2 geometry:**
-
-- Unit sphere: $\{x : \|x\|_2 = 1\}$ is a round sphere
-- Distance depends on **vector magnitude** AND **direction**
-- Scaling a vector moves it away in Euclidean space
-
-**L1 geometry (after normalization):**
-
-- Probability simplex: $\Delta^{K-1} = \{x : x_i \geq 0, \sum x_i = 1\}$
-- All probability distributions live on this $(K-1)$-dimensional simplex
-- Distance measures **how to transport probability mass**
-- Scaling doesn't matter (normalization projects everything onto simplex)
-
-**Consequence for the synchrophasor data:**
-
-When the 2.5 Hz mode **drifts upward in frequency** at t=90s:
-- Energy **redistributes** from bin 21 (2.5 Hz) to higher bins
-- Total power might stay similar
-
-**L2 sees:** Magnitude changes across multiple bins → large distance
-**Trace sees:** Probability mass movement → smaller distance (compressed to [0,1])
-
-**When amplitude doubles but frequency stays same:**
-
-- All bins scale proportionally
-- Shape unchanged
-
-**L2 sees:** Large magnitude difference → large distance  
-**Trace sees:** After normalization → zero distance!
-
----
-
-#### **2.7 Distance Metric Choice Implications**
-
-The pipeline has **two independent analyses**:
-
-**A. Mode Detection (TDA on individual PSDs)**
-
-For each segment $j$, apply H0 persistence to the 1D PSD function:
-
-$$\mathbf{p}_j \xrightarrow{\text{H0 TDA}} N_{modes}(j)$$
-
-This counts peaks/modes by analyzing sublevel sets of the PSD curve. The distance metric **does not affect** this step.
-
-**Result:** All 4 methods detect the same number of modes (≈1.00) throughout the signal because they're analyzing the same PSD functions.
-
----
-
-**B. Regime Change Detection (using distance matrix)**
-
-Compute pairwise distances between all segments:
-
-$$\mathbf{D} \in \mathbb{R}^{J \times J}, \quad D_{ij} = d(\mathbf{p}_i, \mathbf{p}_j)$$
-
-**Sequential distances:**
-$$d_i = D[i, i+1], \quad i = 0, 1, \ldots, J-2$$
-
-This measures "how different is segment $i$ from segment $i+1$?"
-
-**Regime change detection criterion:**
-
-Flag a regime change at time $i$ if:
-$$d_i > \mu_d + \alpha \cdot \sigma_d$$
-
-where:
-
-- $\mu_d = \frac{1}{J-1}\sum_{k=0}^{J-2} d_k$ (mean distance)
-- $\sigma_d = \sqrt{\frac{1}{J-1}\sum_{k=0}^{J-2}(d_k - \mu_d)^2}$ (standard deviation)
-- $\alpha = 0.5$ (threshold parameter, tunable)
-
----
-
-#### **2.7.1 Why L2 and L1 Give Different Regime Detections**
-
-**Euclidean (L2) sequential distances:**
-
-- Range: [3.0, 6.5] approximately
-- Mean: $\mu_{L2} \approx 4.3$
-- Std: $\sigma_{L2} \approx 1.3$
-- Threshold: $4.3 + 0.5(1.3) = 4.95$
-- Any spike above ~4.95 triggers regime change
-
-**Trace (L1) sequential distances:**
-
-- Range: [0.27, 0.47] approximately  
-- Mean: $\mu_{L1} \approx 0.36$
-- Std: $\sigma_{L1} \approx 0.07$
-- Threshold: $0.36 + 0.5(0.07) = 0.395$
-- Only spikes above ~0.40 trigger regime change
-
-**Key difference:**
-
-L2 has **larger dynamic range** and **more variance**:
-
-- Small amplitude changes → moderate distance increase → can cross threshold
-- More sensitive → more regime detections (4 changes)
-- But many are false positives (amplitude fluctuations, not actual mode drift)
-
-L1 has **compressed range [0,1]** and **less variance**:
-
-- Amplitude-only changes → near-zero distance (normalized away)
-- Only frequency redistribution → significant distance
-- Less sensitive → fewer detections (1-2 changes)
-- But more likely to be true positives (actual mode drift at t=90s)
-
-**Example:** Mode at 2.5 Hz doubles in amplitude but frequency unchanged.
-
-**Before:** $\mathbf{p}_i$ with peak at bin 21: value = 0.00167
-
-**After:** $\mathbf{p}_{i+1}$ with peak at bin 21: value = 0.00334
-
-**L2 distance:**
-$$d_{L2}(i, i+1) = \sqrt{\sum_k (p_i[k] - p_{i+1}[k])^2}$$
-
-At bin 21 alone: $(0.00167 - 0.00334)^2 \approx 0.0000028$
-
-Summing over all bins with similar doublings: $d_{L2} \approx 0.7$ (can cross threshold!)
-
-**L1 distance (after normalization):**
-
-Before normalization: $\sum_k p_i[k] = S_1$
-
-After normalization: $\sum_k p_{i+1}[k] = S_2 \approx 2S_1$ (doubled)
-
-But normalized:
-$$\tilde{p}_i[21] = \frac{0.00167}{S_1}, \quad \tilde{p}_{i+1}[21] = \frac{0.00334}{2S_1} = \frac{0.00167}{S_1}$$
-
-They're identical! $d_{trace} = 0$ (doesn't cross threshold)
-
----
-
-#### **2.7.2 Cumulative Drift from Initial State**
-
-Another use of the distance matrix: track drift from $t=0$:
-
-$$\text{Drift}(j) = D[0, j]$$
-
-This measures "how far has the system moved from its initial state?"
-
-**L2 cumulative drift:**
-
-- Monotonically increases as signal evolves
-- Peaks scattered (t=60s, 75s, 105s, 135s in different trials)
-- Sensitive to accumulated amplitude changes
-
-**L1 cumulative drift:**  
-
-- More stable, smaller range [0.2, 0.5]
-- Local maximum at t=90s occurs in 45% of trials (highest rate!)
-- Only responds to frequency content redistribution
-
-**Why L1 better detects transition at t=90s:**
-
-At the true transition, the 2.5 Hz mode **shifts frequency upward**. This causes:
-
-- Probability mass moves from bin 21 → bins 22-25
-- Normalized distribution changes significantly
-- L1 detects this redistribution
-
-Meanwhile, amplitude fluctuations before/after t=90s don't affect L1 (normalized away), so it doesn't create false peaks.
-
----
-
-#### **Summary**
-
-**Distance metric choice affects:**
-
-| Analysis Component | L2 (Euclidean) | L1 (Trace) |
-|-------------------|----------------|------------|
-| **Mode detection** | Not affected | Not affected |
-| **Regime detection** | 4 changes (oversensitive) | 1-2 changes (appropriate) |
-| **Cumulative drift** | Scattered peaks | 45% peak at t=90s |
-| **Physical meaning** | Magnitude changes | Frequency redistribution |
-
-**For power system monitoring:**
-
-L1 trace distance is superior because:
-
-1. **Filters amplitude noise:** Load variations don't trigger false alarms
-2. **Detects frequency shifts:** Actual mode drift (topology change) is captured
-3. **Robust to scaling:** Generator amplitude changes don't affect distance
-4. **Physically meaningful:** "What fraction of oscillation energy moved between modes?"
-
-The compressed [0,1] range naturally filters amplitude-only variations while preserving sensitivity to frequency content changes.
-
----
-
-### **Section 3: Quantum Distance Computation**
-
-Now we move from classical to quantum methods for computing these distances.
-
-**Key idea:** Encode PSD vectors as quantum states, use quantum circuits to estimate distances.
-
----
-
-#### **3.1 Why Quantum? (Motivation)**
-
-**Classical computation:**
-
-- Distance between two vectors: $O(K)$ operations
-- Distance matrix for $J$ vectors: $O(J^2 K)$ operations
-- For $J=12, K=129$: ~18,000 operations in this case
-
-**Quantum potential advantages:**
-
-1. **For large $J, K$**: Quantum algorithms can achieve polynomial speedups
-2. **Amplitude encoding**: Can represent $K$-dimensional vector in $\log_2 K$ qubits
-3. **Parallelism**: Quantum superposition explores multiple comparisons simultaneously
-4. **Different sampling statistics**: May amplify or suppress certain features
-
-**In this case:** No computational advantage (data is small), but **proof of concept** for:
-
-- Understanding quantum vs classical geometries
-- Exploring noise effects on topological structure
-- Foundational work for scaling to massive datasets
-
----
-
-#### **3.2 Quantum State Encoding**
-
-To use quantum circuits, we must encode classical vectors as quantum states.
-
-**Two encoding schemes:**
-
-#### **Amplitude Encoding (used for trace distance)**
-
-A classical vector $\mathbf{v} = [v_0, v_1, \ldots, v_{K-1}]^T$ is encoded as:
-
-$$|\psi\rangle = \sum_{k=0}^{K-1} \alpha_k |k\rangle$$
-
-where $\alpha_k$ are complex amplitudes and $|k\rangle$ are computational basis states.
-
-**Requirements:**
-
-1. $\sum_{k=0}^{K-1} |\alpha_k|^2 = 1$ (normalization)
-2. $K$ must be power of 2 → need $n = \lceil \log_2 K \rceil$ qubits
-
-**For PSD vectors:**
-
-- $K = 129$ → need $\lceil \log_2 129 \rceil = 8$ qubits
-- Pad to $K' = 256$ (next power of 2)
-- $n = 8$ qubits
-
-**Encoding procedure:**
-
-Given $\mathbf{p} \in \mathbb{R}^{129}_{+}$ (all non-negative):
-
-1. Normalize: $\tilde{p}_k = p_k / \sum_m p_m$
-2. Pad: extend to 256 dimensions with zeros
-3. Set amplitudes: $\alpha_k = \sqrt{\tilde{p}_k}$
-4. Create state: $|\psi\rangle = \sum_{k=0}^{255} \sqrt{\tilde{p}_k} |k\rangle$
-
-**Verification:**
-$$\sum_{k=0}^{255} |\alpha_k|^2 = \sum_{k=0}^{255} \tilde{p}_k = 1$$
-
-**Physical meaning:** 
-
-- Measuring $|\psi\rangle$ in computational basis
-- Get outcome $|k\rangle$ with probability $|\alpha_k|^2 = \tilde{p}_k$
-- Quantum state **IS** the probability distribution!
-
----
-
-#### **3.3 Swap Test (for L2-like distances)**
-
-**Goal:** Estimate inner product $\langle\psi_1|\psi_2\rangle$ between two quantum states.
-
-**Circuit construction:**
-
-```
-|0⟩ ── H ──●── H ── M
-           │
-|φ⟩  ──────×──────
-           │
-|ψ⟩  ──────×──────
-```
-
-Where:
-
-- Top qubit: ancilla (control)
-- Middle register: $n$ qubits for $|\psi_1\rangle$
-- Bottom register: $n$ qubits for $|\psi_2\rangle$
-- $\times$ = controlled-SWAP (Fredkin gate)
-- $H$ = Hadamard gate
-- $M$ = measurement
-
-**Mathematical derivation:**
-
-**Step 1:** Initial state
-$$|0\rangle |\psi_1\rangle |\psi_2\rangle$$
-
-**Step 2:** Apply Hadamard to ancilla
-$$H|0\rangle = \frac{1}{\sqrt{2}}(|0\rangle + |1\rangle)$$
-
-State becomes:
-$$\frac{1}{\sqrt{2}}(|0\rangle|\psi_1\rangle|\psi_2\rangle + |1\rangle|\psi_1\rangle|\psi_2\rangle)$$
-
-**Step 3:** Apply controlled-SWAP
-
-- If ancilla = $|0\rangle$: do nothing
-- If ancilla = $|1\rangle$: swap $|\psi_1\rangle \leftrightarrow |\psi_2\rangle$
-
-State becomes:
-
-$$\frac{1}{\sqrt{2}}(|0\rangle|\psi_1\rangle|\psi_2\rangle + |1\rangle|\psi_2\rangle|\psi_1\rangle)$$
-
-**Step 4:** Apply Hadamard to ancilla again
-
-$$H(|0\rangle|\psi_1\rangle|\psi_2\rangle + |1\rangle|\psi_2\rangle|\psi_1\rangle) = \ldots$$
-
-After algebra:
-
-$$= \frac{1}{2}\left[|0\rangle(|\psi_1\rangle|\psi_2\rangle + |\psi_2\rangle|\psi_1\rangle) + |1\rangle(|\psi_1\rangle|\psi_2\rangle - |\psi_2\rangle|\psi_1\rangle)\right]$$
-
-**Step 5:** Measure ancilla
-
-Probability of measuring $|0\rangle$:
-
-$$P(|0\rangle) = \frac{1}{4}|\langle\psi_1|\langle\psi_2| + \langle\psi_2|\langle\psi_1|)(|\psi_1\rangle|\psi_2\rangle + |\psi_2\rangle|\psi_1\rangle)|^2$$
-
-After expanding (using orthonormality):
-
-$$P(|0\rangle) = \frac{1}{2}(1 + |\langle\psi_1|\psi_2\rangle|^2)$$
-
-**Key result:**
-$$\boxed{P(|0\rangle) = \frac{1}{2}(1 + |\langle\psi_1|\psi_2\rangle|^2)}$$
-
-**Recovering inner product:**
-$$|\langle\psi_1|\psi_2\rangle|^2 = 2P(|0\rangle) - 1$$
-
----
-
-#### **3.4 From Inner Product to Distance**
-
-For real, normalized states $|\psi_1\rangle, |\psi_2\rangle$:
-
-$$\langle\psi_1|\psi_2\rangle = \sum_{k} \alpha_k^{(1)} \alpha_k^{(2)}$$
-
-**Relationship to Euclidean distance:**
-
-$$\|\psi_1 - \psi_2\|_2^2 = \sum_k (\alpha_k^{(1)} - \alpha_k^{(2)})^2$$
-
-Expanding:
-$$= \sum_k [(\alpha_k^{(1)})^2 + (\alpha_k^{(2)})^2 - 2\alpha_k^{(1)}\alpha_k^{(2)}]$$
-
-$$= \|\psi_1\|_2^2 + \|\psi_2\|_2^2 - 2\langle\psi_1|\psi_2\rangle$$
-
-For normalized states ($\|\psi_i\|_2 = 1$):
-
-$$\boxed{\|\psi_1 - \psi_2\|_2^2 = 2(1 - \langle\psi_1|\psi_2\rangle)}$$
-
-Therefore:
-$$d_{L2}(\psi_1, \psi_2) = \sqrt{2(1 - \langle\psi_1|\psi_2\rangle)}$$
-
-**From swap test measurement:**
-$$\langle\psi_1|\psi_2\rangle = \sqrt{2P(|0\rangle) - 1}$$
-
-(Taking square root of the squared inner product, assuming real states)
-
-**Final formula:**
-$$\boxed{d_{L2}^{quantum} = \sqrt{2(1 - \sqrt{2P(|0\rangle) - 1})}}$$
-
----
-
-#### **3.5 Sampling Statistics**
-
-**Key limitation:** We can't directly measure $P(|0\rangle)$, only estimate it via sampling.
-
-**Procedure:**
-
-1. Run circuit $N_{shots}$ times (e.g., 1024 shots)
-2. Count outcomes: $N_0$ times measured $|0\rangle$
-3. Estimate: $\hat{P}(|0\rangle) = N_0 / N_{shots}$
-
-**Statistical properties:**
-
-Measurement outcomes follow **binomial distribution**:
-$$N_0 \sim \text{Binomial}(N_{shots}, P(|0\rangle))$$
-
-**Mean:** $\mathbb{E}[N_0] = N_{shots} \cdot P(|0\rangle)$
-
-**Variance:** $\text{Var}(N_0) = N_{shots} \cdot P(|0\rangle)(1 - P(|0\rangle))$
-
-**Estimated probability:**
-$$\hat{P}(|0\rangle) = \frac{N_0}{N_{shots}}$$
-
-**Variance of estimator:**
-$$\text{Var}(\hat{P}(|0\rangle)) = \frac{P(|0\rangle)(1-P(|0\rangle))}{N_{shots}}$$
-
-**Standard deviation:**
-$$\sigma_{\hat{P}} = \sqrt{\frac{P(1-P)}{N_{shots}}}$$
-
-**For $N_{shots} = 1024$ and $P \approx 0.5$ (worst case):**
-$$\sigma_{\hat{P}} \approx \sqrt{\frac{0.25}{1024}} \approx 0.0156$$
-
-So uncertainty is ~1.6% of the probability.
-
-**Propagation to distance:**
-
-Since $d = f(P)$ is nonlinear, variance propagates via:
-$$\text{Var}(d) \approx \left(\frac{\partial f}{\partial P}\right)^2 \text{Var}(P)$$
-
-**Consequence:** 
-
-- More shots → lower variance → more accurate distance
-- But never exact (fundamental sampling noise)
-- This creates the "quantum noise" we observe in results
-
----
-
-#### **3.6 Trace Distance via Amplitude Encoding**
-
-**Goal:** Estimate $d_{trace} = \frac{1}{2}\sum_k |\tilde{p}_1[k] - \tilde{p}_2[k]|$
-
-**Quantum approach:**
-
-**Step 1:** Encode distributions as amplitudes
-$$|\psi_1\rangle = \sum_k \sqrt{\tilde{p}_1[k]}|k\rangle, \quad |\psi_2\rangle = \sum_k \sqrt{\tilde{p}_2[k]}|k\rangle$$
-
-**Step 2:** Measure each state in computational basis many times
-
-- For $|\psi_1\rangle$: get empirical distribution $\hat{p}_1[k]$
-- For $|\psi_2\rangle$: get empirical distribution $\hat{p}_2[k]$
-
-**Step 3:** Compute trace distance classically from samples
-$$\hat{d}_{trace} = \frac{1}{2}\sum_k |\hat{p}_1[k] - \hat{p}_2[k]|$$
-
-**Why this works:**
-
-Measuring $|\psi_i\rangle$ gives outcome $|k\rangle$ with probability $|\alpha_k|^2 = \tilde{p}_i[k]$.
-
-With $N$ measurements, empirical frequency:
-$$\hat{p}_i[k] = \frac{\text{count of outcome } |k\rangle}{N}$$
-
-By law of large numbers: $\hat{p}_i[k] \xrightarrow{N \to \infty} \tilde{p}_i[k]$
-
-**Sampling noise:**
-
-Each bin: $\text{count}_k \sim \text{Binomial}(N, \tilde{p}_i[k])$
-
-Variance: $\text{Var}(\hat{p}_i[k]) = \frac{\tilde{p}_i[k](1-\tilde{p}_i[k])}{N}$
-
-For $K = 256$ bins and $N = 1024$ shots:
-
-- If $\tilde{p}[k] = 0.01$ (small mode):
-  - Expected counts: $10.24$
-  - Std dev: $\sqrt{10.24 \cdot 0.01 \cdot 0.99} \approx 0.0031$
-  - Relative error: $0.0031 / 0.01 \approx 31$%!
-
-**Problem:** Small probability bins have big relative errors!
-
-**Effect on trace distance:**
-
-- Systematic bias: tends to overestimate small differences
-- High variance: different runs give very different values
-- Bounded [0,1] amplifies relative errors (can't spread out)
-- Lower correlation with trace classical (0.282)
-- More scattered cumulative drift peaks
-- Higher variance in regime detection
-
----
-
-#### **3.7 Comparison: Swap Test vs Amplitude Sampling**
-
-| Property | Swap Test (L2) | Amplitude Sampling (L1) |
-|----------|----------------|------------------------|
-| **Qubits** | 2n + 1 (both states + ancilla) | n per state (sequential) |
-| **State prep** | O(2^n) per state | O(2^n) per state |
-| **Post-prep gates** | O(n) controlled-SWAPs | None (direct measurement) |
-| **Circuit size** | Larger (2n+1 qubits) | Smaller (n qubits) |
-| **Measurements** | 1 qubit (ancilla) | n qubits (full state) |
-| **Statistic** | Binary (ancilla) | Multinomial (all outcomes) |
-| **Shots needed** | ~1000 for 2% error | ~10,000 for sparse distributions |
-| **Observed time** | 0.77s | 0.11s |
-| **Correlation w/ classical** | 0.421 | 0.282 |
-| **Noise effect** | Moderate | Severe (due to [0,1] bound) |
-
----
-
-**Summary of Section 3:**
-
-$$\boxed{\begin{aligned}
-\text{Classical PSD } \mathbf{p} &\xrightarrow{\text{Normalize}} \tilde{\mathbf{p}} \\
-&\xrightarrow{\text{Amplitude encode}} |\psi\rangle = \sum_k \sqrt{\tilde{p}_k}|k\rangle \\
-&\xrightarrow{\text{Swap test}} P(|0\rangle) = \frac{1}{2}(1 + |\langle\psi_1|\psi_2\rangle|^2) \\
-&\xrightarrow{\text{Estimate}} d_{L2}^{quantum} \\
-\\
-\text{OR} \\
-&\xrightarrow{\text{Measure}} \hat{p}_i[k] \text{ (sample distribution)} \\
-&\xrightarrow{\text{Compute}} d_{trace}^{quantum} = \frac{1}{2}\sum_k |\hat{p}_1[k] - \hat{p}_2[k]|
-\end{aligned}}$$
-
-Sampling noise from finite shots creates divergence from classical results.
-
----
-
-### **Section 4: Persistent Homology on 1D PSD Functions**
-
-The distance matrix analysis (regime detection) is **separate** from mode detection. For mode detection, we apply TDA to each PSD vector **individually**.
-
-#### **4.1 PSD as a 1D Landscape**
-
-Each PSD vector $\mathbf{p}_j = [p_j[0], p_j[1], \ldots, p_j[128]]^T$ can be viewed as a **1D function**:
-
-$$\text{PSD}_j: [f_0, f_{128}] \rightarrow \mathbb{R}_+$$
-
-where $f_k$ is the frequency at bin $k$.
-
-**Geometrically:**
-
-- Horizontal axis: frequency $f$
-- Vertical axis: power $\text{PSD}(f)$
-- Peaks in the landscape = oscillation modes
-
-**Example from data (Segment 1):**
-
-```
-f = 0.469 Hz: PSD = 0.0535  ← Peak (0.5 Hz mode)
-f = 1.172 Hz: PSD = 0.0163  ← Peak (1.2 Hz mode)
-f = 2.461 Hz: PSD = 0.0017  ← Peak (2.5 Hz mode)
-Everywhere else: PSD ≈ 0.0001 (noise floor)
-```
-
----
-
-#### **4.2 Superlevel Set Filtration**
-
-To find peaks using topology, we use **superlevel sets**.
-
-**Definition:** For threshold $\epsilon$, the superlevel set is:
-
-$$L_\epsilon = \{f : \text{PSD}(f) \geq \epsilon\}$$
-
-**Filtration:** Start with high $\epsilon$ and gradually decrease:
-
-$$\epsilon_{max} = \max_k p_j[k] \quad \text{down to} \quad \epsilon_{min} = 0$$
-
-**What happens as $\epsilon$ decreases:**
-
-1. **$\epsilon = 0.06$:** $L_\epsilon = \emptyset$ (above all peaks, nothing visible)
-
-2. **$\epsilon = 0.054$:** Peak at 0.469 Hz appears → 1 connected component **born**
-
-3. **$\epsilon = 0.030$:** Peak at 0.469 Hz still alive, peak at 1.172 Hz appears → 2 components
-
-4. **$\epsilon = 0.015$:** Both peaks merge into one component → 1st peak **dies**
-
-5. **$\epsilon = 0.002$:** Peak at 2.461 Hz appears → back to 2 components
-
-6. **$\epsilon = 0.001$:** All peaks connect through noise floor → all merge to 1 component
-
----
-
-#### **4.3 Birth-Death Pairs (Persistence Diagram)**
-
-Each peak creates a **birth-death pair**:
-
-$$(\epsilon_{birth}, \epsilon_{death})$$
-
-**Persistence:**
-$$\pi = \epsilon_{birth} - \epsilon_{death}$$
-
-High persistence = prominent peak (real mode)
-
-Low persistence = noise bump (ignore)
-
-**Example calculation for 0.5 Hz mode:**
-
-- **Birth:** $\epsilon = 0.0535$ (peak value at bin 4)
-- **Death:** When this peak merges with 1.2 Hz peak at their saddle point
-  - Saddle ≈ minimum between peaks ≈ 0.0003 (bin 6-7)
-- **Persistence:** $\pi = 0.0535 - 0.0003 = 0.0532$
-
-**For 1.2 Hz mode:**
-
-- Birth: $0.0163$
-- Death: $0.0003$ (same saddle)
-- Persistence: $0.0160$
-
-**For 2.5 Hz mode:**
-
-- Birth: $0.0017$
-- Death: $0.0001$ (noise floor)
-- Persistence: $0.0016$
-
----
-
-#### **4.4 Working in Log Scale**
-
-**Log scale** is used to handle the large dynamic range:
-
-```python
-log_psd = np.log10(psd_filtered + 1e-10)
-```
-
-**Why logarithm?**
-
-PSDs have huge dynamic range:
-
-- Peak: $0.05$
-- Noise: $0.00001$
-- Ratio: $5000:1$
-
-In log scale:
-
-- Peak: $\log_{10}(0.05) \approx -1.3$
-- Noise: $\log_{10}(10^{-5}) = -5.0$
-- Difference: $3.7$ decades
-
-**Persistence in log scale:**
-
-$$\pi_{log} = \log_{10}(\text{PSD}_{birth}) - \log_{10}(\text{PSD}_{death})$$
-
-This measures **orders of magnitude** prominence.
-
----
-
-#### **4.5 Cubical Complex Construction**
-
-Gudhi uses a **cubical complex** to represent the 1D function discretely.
-
-**For 1D function with $K$ points:**
-
-1. **0-cells (vertices):** Each frequency bin $k = 0, 1, \ldots, K-1$
-
-2. **1-cells (edges):** Connect consecutive bins $(k, k+1)$
-
-3. **Function values:** Assign $\text{PSD}[k]$ to vertex $k$
-
-**Cubical complex = discretized version of the continuous function**
-
-**Filtration on cubical complex:**
-
-For decreasing $\epsilon$:
-
-- Add vertex $k$ when $\epsilon \leq \text{PSD}[k]$
-- Add edge $(k, k+1)$ when $\epsilon \leq \min(\text{PSD}[k], \text{PSD}[k+1])$
-
-**H0 computation:**
-
-- Track connected components as $\epsilon$ decreases
-- Component merges = death event
-- New local maximum = birth event
-
----
-
-#### **4.6 Finding Maxima (Negation Trick)**
-
-**Problem:** Standard persistence finds **minima** via sublevel sets.
-
-**Solution:** Negate the function to find **maxima**:
-
-```python
-negated_function = -log_psd
-```
-
-Now:
-
-- Peaks become valleys
-- Sublevel sets of negated function = superlevel sets of original
-- Minima detection → maxima detection
-
-**Mathematical justification:**
-
-For function $f(x)$, superlevel set at $\epsilon$:
-$$\{x : f(x) \geq \epsilon\}$$
-
-For negated function $g(x) = -f(x)$, sublevel set at $-\epsilon$:
-$$\{x : g(x) \leq -\epsilon\} = \{x : -f(x) \leq -\epsilon\} = \{x : f(x) \geq \epsilon\}$$
-
-Same set! So computing sublevel persistence on $-f$ gives superlevel persistence on $f$.
-
----
-
-#### **4.7 Extracting Mode Frequencies**
-
-After computing persistence diagram with pairs $\{(\epsilon_i^{birth}, \epsilon_i^{death})\}$:
-
-**Step 1:** Calculate persistences
-$$\pi_i = \epsilon_i^{birth} - \epsilon_i^{death}$$
-
-**Step 2:** Set threshold (e.g., 80th percentile)
-$$\tau = \text{percentile}_{80}(\{\pi_i\})$$
-
-**Step 3:** Keep significant features
-$$\text{Significant} = \{i : \pi_i > \tau\}$$
-
-**Step 4:** Map back to frequencies
-
-Each birth corresponds to a local maximum at some bin $k_{max}^{(i)}$
-
-$$f_{mode}^{(i)} = f[k_{max}^{(i)}]$$
-
-**Results:** Typically detect $N_{modes} = 3$ significant peaks corresponding to 0.5, 1.2, 2.5 Hz modes.
-
----
-
-#### **4.8 Why This is Independent of Distance Metric**
-
-**Key point:** Each segment's PSD is analyzed **in isolation**.
-
-$$\mathbf{p}_1 \xrightarrow{\text{H0 TDA}} N_1 \text{ modes}$$
-$$\mathbf{p}_2 \xrightarrow{\text{H0 TDA}} N_2 \text{ modes}$$
-$$\vdots$$
-
-**No comparison between segments happens here!**
-
-Whether you use L2 or L1 distance for **regime detection** doesn't affect how you count peaks **within each segment**.
-
-**Result in pipeline:**
-
-- All 4 methods detect same mode count evolution: $N_{modes}(t) \approx 1.0$ throughout
-- Mode count stays constant because you're tracking specific frequency peaks
-- The actual **frequencies** of those peaks might drift (2.5 Hz → higher), but count stays same
-
----
-
-#### **4.9 Complete Mode Detection Pipeline**
-
-For segment $j$:
-
-$$\boxed{\begin{aligned}
-\text{Raw signal } x_j[n] &\xrightarrow{\text{Welch}} \mathbf{p}_j \in \mathbb{R}^{129} \\
-&\xrightarrow{\text{Log scale}} \log_{10}(\mathbf{p}_j) \\
-&\xrightarrow{\text{Negate}} -\log_{10}(\mathbf{p}_j) \\
-&\xrightarrow{\text{Cubical complex}} \text{1D filtration} \\
-&\xrightarrow{\text{H0 persistence}} \{(\epsilon_i^b, \epsilon_i^d)\} \\
-&\xrightarrow{\text{Filter by } \pi > \tau} \{f_{mode}^{(1)}, \ldots, f_{mode}^{(N)}\}
-\end{aligned}}$$
-
-**Repeat independently for all $J$ segments.**
-
----
-
-#### **4.10 Summary**
-
-**Two separate topological analyses in pipeline:**
-
-| Analysis | Input | Method | Output | Distance Metric? |
-|----------|-------|--------|--------|-----------------|
-| **Mode Detection** | Single PSD $\mathbf{p}_j$ | H0 on 1D function | $N_{modes}(j)$ | No |
-| **Regime Detection** | All PSDs $\{\mathbf{p}_1, \ldots, \mathbf{p}_J\}$ | Distance matrix + thresholding | Transition times | Yes (L1 vs L2) |
-
-**Distance metric choice only affects regime detection, not mode counting.**
-
----
-
-## **Real Data Results**
-
-### **Experimental Setup**
-
-**Data Sources:**
-- Synthetic signals with controlled mode drift (validation)
-- Six GESL real PMU signals with labeled oscillation events
-
-**Pipeline Parameters:**
-- Sampling rate: 30 Hz
-- Segment duration: 15 seconds
-- PSD: Welch method, 42 frequency bins (0.12–4.97 Hz)
-- Frequency resolution: ~0.12 Hz
-- Quantum shots: 1024
-
-**Methods Compared:**
-1. Classical Euclidean (L2)
-2. Quantum Swap Test (L2-like)
-3. Classical Trace Distance (L1)
-4. Quantum-sampled Trace Distance (L1 + sampling noise)
-
----
-
-### **Mode Detection Validation**
-
-| Signal | Known Frequency | Detected | Error |
-|--------|-----------------|----------|-------|
-| 1015 | 0.55 Hz | 0.592 Hz | 0.042 Hz |
-| 1032 | 0.20 Hz | 0.237 Hz | 0.037 Hz |
-| 1032 | 0.55 Hz | 0.592 Hz | 0.042 Hz |
-| 1032 | 0.75 Hz | 0.710 Hz | 0.040 Hz |
-| 1058 | 0.75 Hz | 0.710 Hz | 0.040 Hz |
-| 1058 | 1.50 Hz | 1.539 Hz | 0.039 Hz |
-| 1084 | 0.60 Hz | 0.592 Hz | **0.008 Hz** |
-| 1084 | 0.75 Hz | 0.710 Hz | 0.040 Hz |
-| 1085 | 0.10 Hz | 0.237 Hz | 0.137 Hz* |
-| 1232 | 0.75 Hz | 0.710 Hz | 0.040 Hz |
-
-**Mean error: ~0.036 Hz** (within one-third of frequency resolution)
-
-*0.1 Hz is at resolution floor — 15s segments capture only 1.5 cycles
-
----
-
-### **L1 vs L2 Behavior**
+**Table 6: Detection behavior comparison**
 
 | Signal | Oscillation Pattern | L2 Behavior | L1 Behavior |
 |--------|---------------------|-------------|-------------|
 | 1015 | Mixed amplitude/onset | Late detection (187s+) | Earlier onset (82s) |
-| 1032 | Two amplitude bursts | Catches bursts well | Too flat, missed structure |
-| 1058 | Persistent oscillation | Clustered early (52-97s) | Spread detection + earlier onset (22s) |
-| 1084 | Bursts + sustained end | Clustered on bursts | Caught late sustained structure (591-741s) |
+| 1032 | Multiple modes | Caught late burst (322s) | Caught mid-signal change (97s) |
+| 1058 | Persistent oscillation | Clustered early (52-97s) | Spread + earlier onset (22s) |
+| 1084 | Bursts + sustained end | Clustered on bursts | Caught late sustained (591-741s) |
 | 1085 | Distributed events | Scattered detection | Caught end structure (756-801s) |
-| 1232 | Amplitude envelope changes | More detections (11) | Fewer detections (7), sparse |
+| 1232 | Amplitude envelope | More detections (11) | Fewer detections (7) |
 
-**Key Finding:**
-- **L2 asks:** "Did it get loud?" → Best for amplitude excitation events
-- **L1 asks:** "Did the shape change?" → Best for onset detection and internal structure
+*Table 6: Detection behavior comparison across GESL signals. L2 responds to amplitude bursts (sudden power changes); L1 responds to spectral redistribution (mode onset, frequency migration). Neither is universally superior - they detect different physical phenomena.*
 
----
+**Interpretation:**
 
-### **Quantum Effects**
+- **L2 asks:** "Did it get loud?" → Best for amplitude excitation events (sudden bursts)
+- **L1 asks:** "Did the shape change?" → Best for onset detection and internal redistribution
 
-**Stochastic amplification is real and consistent:**
+### 4.4 Quantum Sampling Effects
+
+**Table 7: Regime changes detected by method**
 
 | Signal | Euclidean | Swap Test | Δ | Trace Classical | Trace Quantum | Δ |
 |--------|-----------|-----------|---|-----------------|---------------|---|
-| 989 | 20 | 28 | +8 | 34 | 39 | +5 |
-| 1015 | 4 | 6 | +2 | 4 | 4 | 0 |
-| 1032 | 4 | 4 | 0 | 4 | 5 | +1 |
-| 1058 | 6 | 7 | +1 | 10 | 11 | +1 |
-| 1084 | 9 | 8 | -1 | 10 | 10 | 0 |
-| 1085 | 6 | 5 | -1 | 6 | 6 | 0 |
-| 1232 | 11 | 9 | -2 | 7 | 8 | +1 |
+| 1015 | 4 | 4 | 0 | 4 | 3 | -1 |
+| 1032 | 4 | 4 | 0 | 4 | 4 | 0 |
+| 1058 | 6 | 9 | +3 | 10 | 11 | +1 |
+| 1084 | 9 | 8 | -1 | 10 | 9 | -1 |
+| 1085 | 6 | 6 | 0 | 6 | 6 | 0 |
+| 1232 | 11 | 10 | -1 | 7 | 8 | +1 |
 
-Quantum sampling doesn't uniformly increase sensitivity — it **redistributes detection probability**. Sometimes adds, sometimes shifts where detections occur.
+*Table 7: Regime changes detected across all GESL signals. Quantum sampling introduces stochastic variation (±1-3 detections) without systematic improvement - sometimes more, sometimes fewer. This is noise redistribution, not signal enhancement. Note that for Signal 1015, quantum L1 missed the critical early warning at 82s that classical L1 caught.*
 
-**Computational Cost:**
-| Method | Time (989, 245 segments) |
-|--------|--------------------------|
-| Classical Euclidean | 0.08s |
-| Swap Test | 3340s (55 min) |
-| Trace Classical | 0.67s |
-| Trace Quantum | 65.68s |
+Quantum sampling introduces stochastic perturbation that sometimes increases detection count (pushing marginal cases across threshold) and sometimes decreases it. The effect is inconsistent - note that for 1058, swap test finds 3 more than Euclidean while trace quantum finds only 1 more than trace classical. This is noise, not systematic signal enhancement.
 
-Quantum methods are 50-40,000× slower with no accuracy benefit.
+### 4.5 GESL Signal Benchmarks
 
----
+The following benchmark figures show five panels for each GESL signal: (1) Raw signal with vertical lines marking detected regime changes by method (blue/cyan = L2 family, green/red = L1 family); (2) Spectrogram with red dashed horizontal lines at known oscillation frequencies; (3) TDA mode detection showing detected modes (blue dots) against known frequencies (red dashed line); (4) L2 cumulative drift comparing Euclidean (blue) and Swap Test (orange) - higher values indicate greater divergence from initial state; (5) L1 cumulative drift comparing Trace Classical (green) and Trace Quantum (red) - bounded [0,1], where values closer to 1 indicate complete spectral redistribution.
 
-### **Cumulative Drift Patterns**
+![Signal 1015 Benchmark](figures/sigId-1015-benchmark.png)
+*Figure 6: GESL Signal 1015: 5-minute recording with known 0.55 Hz inter-area mode. Four distinct oscillation events visible in spectrogram at ~100s, ~175s, ~200s, and ~230s. L1 detected onset at 82s-18 seconds before the first visible event. L2 didn't flag until 187s. Cumulative drift: L2 shows sharp spike at ~250s (amplitude burst); L1 shows gradual elevation from ~150s onward with peak around 200s, capturing the sustained redistribution pattern. Classical and quantum variants track nearly identically within each family.*
 
-Across all signals:
-- L2 cumulative drift: High variance (4-12 range), tracks amplitude envelope
-- L1 cumulative drift: Flat (0.3-0.8 range), insensitive to amplitude-only changes
+![Signal 1032 Benchmark](figures/sigId-1032-benchmark.png)
+*Figure 7: GESL Signal 1032: Multiple modes (0.20, 0.55, 0.75 Hz). TDA successfully detected all three known frequencies within 0.04 Hz error. L1 caught mid-signal structural change at 97s that L2 missed. Cumulative drift: L2 relatively flat until late burst at ~350s; L1 shows earlier elevation around 100s and sustained activity through 350s. The L1 curve's earlier rise explains its earlier detection.*
 
-This explains why L1 detects *different* events than L2 — it's filtering amplitude and looking for distributional shape changes only.
+![Signal 1058 Benchmark](figures/sigId-1058-benchmark.png)
+*Figure 8: GESL Signal 1058: Sustained oscillation with 0.75 and 1.50 Hz modes. Highest detection count across all methods (6-11 detections), reflecting persistent spectral activity. Cumulative drift: Both L2 and L1 show elevated, variable patterns throughout - no single dominant event but continuous spectral evolution. L1's bounded range makes threshold-setting more consistent despite the complexity.*
 
----
+![Signal 1084 Benchmark](figures/sigId-1084-benchmark.png)
+*Figure 9: GESL Signal 1084: Burst events plus sustained oscillation at end. L2 clustered detections on amplitude bursts (352-457s); L1 caught sustained structural change at signal end (591-741s). Cumulative drift: L2 shows dramatic spikes at burst locations; L1 shows broader elevation in final third of signal. Complementary coverage - L2 finds the loud moments, L1 finds the slow structural shift.*
 
-### **Limitations**
+![Signal 1085 Benchmark](figures/sigId-1085-benchmark.png)
+*Figure 10: GESL Signal 1085: Low-frequency 0.10 Hz mode at resolution floor. Detection error is high (0.137 Hz) because 15s segments capture only 1.5 cycles - a fundamental resolution limit, not method failure. Cumulative drift: Both families show scattered activity with no dominant pattern, consistent with the distributed, low-amplitude nature of this signal.*
 
-1. **Frequency resolution floor:** 15s segments cannot resolve modes below ~0.1 Hz reliably
-2. **No true frequency-drift event:** All GESL signals showed amplitude excitation; L1's theoretical advantage for frequency migration remains unvalidated on real data
-3. **Single PMU analysis:** Multi-PMU coherence not exploited
-4. **Simple threshold detection:** More sophisticated methods (Prony, DMD, ESPRIT) not compared
+![Signal 1232 Benchmark](figures/sigId-1232-benchmark.png)
+*Figure 11: GESL Signal 1232: Amplitude envelope variation. L2 detected more regime changes (11 vs 7) due to sensitivity to amplitude modulation. Cumulative drift: L2 shows pronounced oscillatory pattern tracking the amplitude envelope; L1 is flatter with fewer peaks, reflecting its insensitivity to pure amplitude changes. This signal exemplifies where L2 excels and L1's limitations.*
 
----
+### 4.6 Computational Cost (Simulator)
 
-### **Discussion**
+**Table 8: Computational cost on real data**
 
-The central finding is that **metric geometry matters more than quantum vs classical computation**. L1 and L2 are sensitive to fundamentally different features:
+| Method | Time (sigId-1085, 55 segments) |
+|--------|--------------------------------|
+| Classical Euclidean | 0.01s |
+| Swap Test (simulated) | 106.90s (1.8 min) |
+| Trace Classical | 0.04s |
+| Trace Quantum (simulated) | 2.66s |
 
-- L2 (Euclidean) responds to magnitude changes — appropriate when oscillation *intensity* is the concern
-- L1 (Trace) responds to probability mass redistribution — appropriate when modal *structure* is the concern
-
-For real-time grid monitoring, **both metrics may be valuable in parallel**: L2 for amplitude alarms, L1 for subtle structural changes that precede major events.
-
-Quantum-inspired methods add computational cost without accuracy benefit in this application. The stochastic amplification effect is real but not practically useful — it's as likely to add false positives as catch marginal true positives.
-
-TDA (H0 persistence) serves as a **validation tool** rather than a core contribution — it confirms PSD feature extraction is working but operates independently of the distance metric comparison.
+*Table 8: Computational cost using Qiskit simulation on Signal 1085 (55 segments). These timings reflect classical simulation overhead, not actual QPU performance. On real quantum hardware, the profile would differ significantly (dominated by shot acquisition, queue latency, and coherence constraints). The meaningful comparison is accuracy, not speed.*
 
 ---
 
-## **Conclusion**
+## 5. Discussion
 
-We compared classical and quantum-inspired distance metrics for regime detection in power system synchrophasor data. Our key findings:
+### 5.1 Metric Geometry Dominates
 
-1. **Metric geometry dominates:** L1 vs L2 has greater impact than quantum vs classical
-2. **No universal winner:** L2 excels at amplitude events; L1 at structural/onset detection
-3. **Mode detection validated:** H0 persistence identifies known oscillation frequencies within 0.04 Hz mean error
-4. **Quantum cost without benefit:** 50-40,000× slower, no accuracy improvement
-5. **Practical recommendation:** Use both L1 and L2 in parallel for complementary detection
+The central finding is that **L1 vs L2 geometry matters more than quantum vs classical computation**. Within each metric family, classical and quantum variants produce nearly identical results (correlation >0.95 for cumulative drift curves). The ~5% variation between quantum and classical versions is attributable entirely to sampling noise.
 
-Future work should validate L1 on true frequency-drift events and extend to multi-PMU coherence analysis.
+Between families, the correlation drops significantly (~0.4-0.6), and the methods detect genuinely different event types. This is not noise - it reflects the mathematical reality that L2 responds to magnitude while L1 responds to redistribution.
 
+### 5.2 Complementary Detection Capabilities
 
+No single metric is universally optimal:
+
+- **Amplitude excitation events** (sudden bursts, ringdown): L2 excels because absolute power change is the signal
+- **Frequency migration events** (mode drift, onset): L1 excels because the relative distribution changes even if total power doesn't
+- **Mixed events**: Both metrics provide value; their disagreement indicates the event type
+
+For comprehensive monitoring, **running both metrics in parallel** provides complementary coverage at minimal additional cost (classical L1 and L2 together take <1s).
+
+### 5.3 Quantum Methods: Current Assessment
+
+Using Qiskit simulation, we evaluated quantum-inspired distance computation:
+
+1. **No accuracy improvement**: Quantum methods compute the same distances as classical, with added noise from finite shot sampling
+2. **Stochastic effects not beneficial**: Sampling noise is as likely to add false positives as catch marginal true events, or miss those that barely cross the threshold in classical implmentation
+3. **Timing comparison not meaningful**: Simulator overhead reflects classical emulation cost, not actual QPU performance
+
+The value of this investigation is establishing accuracy baselines. Quantum sampling introduces variance that degrades rather than enhances detection. When fault-tolerant quantum hardware becomes available, the computational trade-offs will differ, but the fundamental accuracy comparison (quantum adds noise, no benefit) is expected to hold unless qualitatively different quantum algorithms are developed.
+
+### 5.4 TDA Mode Detection: Validated
+
+H0 persistence on PSD functions successfully identifies known oscillation modes within 0.04 Hz mean error - well within the frequency resolution limit (~0.12 Hz). This confirms that TDA is a viable model-free approach for mode identification, operating independently of the distance metric choice.
+
+---
+
+## 6. Conclusion
+
+### 6.1 Summary of Findings
+
+1. **Metric geometry dominates**: L1 vs L2 has greater impact on detection than quantum vs classical
+2. **Complementary capabilities**: L2 detects amplitude events; L1 detects redistribution events
+3. **Mode detection validated**: TDA identifies oscillation frequencies within 0.04 Hz mean error
+4. **Quantum adds noise without benefit**: Sampling variance degrades rather than enhances detection accuracy
+5. **Practical recommendation**: Use both L1 and L2 in parallel for comprehensive monitoring
+
+### 6.2 Value Add
+
+This work provides could potentially be used as a baseline for several types of research and across several domains. It is also a working pipeline, easily extensible and modular. Available for replication and enhancements for other types of signal, distance metrics, trials, tuning, and algorithms.
+Below are some key takeaways and recommendations for several types of domain experts.
+
+**For power system operators:**
+
+- L1 catches what L2 misses. Run both. Minimal added cost.
+- TDA as automated, model-free mode detection - no manual tuning required.
+
+**For quantum computing researchers:**
+
+- Quantum noise injection ≠ quantum advantage. This is your baseline to beat.
+- Characterization of quantum sampling noise effects on real detection tasks.
+
+**For the synchrophasor community:**
+
+- TDA works. 0.036 Hz mean error. No model. No tuning. Just data.
+- Metric geometry fundamentally shapes what analysis can detect.
+
+### 6.3 Limitations
+
+1. **No true frequency-drift event in GESL**: All signals showed amplitude excitation; L1's theoretical advantage for frequency migration awaits validation on appropriate data
+2. **Single PMU analysis**: Multi-PMU coherence and spatial patterns not exploited
+3. **Simple threshold detection**: More sophisticated change-point methods not compared
+4. **Frequency resolution floor**: 15s segments cannot resolve modes below ~0.1 Hz
+
+### 6.4 Next Steps
+
+**Near-term:**
+
+- Validate L1 on GESL (or other real PMU data) frequency-drift events
+- Implement sampling rate sensitivity (see **Section 6.5** for more detail) study
+- Implement on QPU
+
+**Medium-term:**
+
+- Implement higher-dimensional TDA (H1), potentially incorporating quantum elements within TDA itself
+- Implement on point-on-wave signal (much finer resolution)
+- Compare against established mode drift algorithms.Extend to multi-PMU
+
+**Long-term:**
+
+- Revisit quantum methods when fault-tolerant hardware enables lower-noise computation
+- Explore quantum advantage for massive-scale grid analysis (1000+ PMUs)
+- Compile a comprehensive computational cost comparison report
+
+### 6.5 Sampling Rate Sensitivity (Future Work)
+
+A key open question is: *what is the minimum segment duration required to reliably detect a shape change of given magnitude?*
+
+The proposed experimental framework:
+
+1. **Inject controlled shape change**: Create synthetic signals where spectral power redistributes between frequency bins at a known time, with controlled magnitude (e.g., 10%, 20%, 50% of power shifts from one mode to another)
+
+2. **Vary segment duration**: Test segment lengths from 5s to 60s
+
+3. **Measure detection rate**: For each (magnitude, duration) pair, compute detection rate across noise realizations
+
+4. **Determine threshold curve**: Identify the minimum segment duration required to achieve 90% detection rate as a function of shape change magnitude
+
+This analysis would inform practical deployment:
+
+- If a grid operator needs to detect 20% power redistribution within 30 seconds, is the current 15s segmentation sufficient?
+- What is the trade-off between temporal resolution and detection reliability?
+
+The frequency resolution constraint is fundamental: a segment of duration $T$ has frequency resolution $\delta f \approx 1/T$. For 15s segments, $\delta f \approx 0.067 Hz$. Shape changes involving frequency shifts smaller than $\delta f$ cannot be resolved regardless of detection method.
+
+*This systematic sensitivity analysis is planned for the next phase of research.*
+
+---
+
+## References
+
+1. Mishra, S., & Vanfretti, L. (2025). Automatically Discerning Power System Dynamics in Synchrophasor Measurements Data Spectra. *International Journal of Electrical Power & Energy Systems*, 170.
+
+2. Edelsbrunner, H., & Harer, J. (2010). *Computational Topology: An Introduction*. American Mathematical Society.
+
+3. Carlsson, G. (2009). Topology and Data. *Bulletin of the American Mathematical Society*, 46(2), 255-308.
+
+4. Buhrman, H., Cleve, R., Watrous, J., & de Wolf, R. (2001). Quantum Fingerprinting. *Physical Review Letters*, 87(16), 167902.
+
+5. Lloyd, S., Mohseni, M., & Rebentrost, P. (2014). Quantum Principal Component Analysis. *Nature Physics*, 10(9), 631-633.
+
+6. Lloyd, S., Garnerone, S., & Zanardi, P. (2016). Quantum Algorithms for Topological and Geometric Analysis of Data. *Nature Communications*, 7, 10138.
+
+7. Allen, G., et al. (2019). Grid Event Signature Library. Pacific Northwest National Laboratory. Available at: https://www.pnnl.gov/projects/gesl
+
+8. Welch, P. D. (1967). The Use of Fast Fourier Transform for the Estimation of Power Spectra. *IEEE Transactions on Audio and Electroacoustics*, 15(2), 70-73.
+
+---
+
+## Appendix A: Mathematical Details
+
+### A.1 Signal Model
+
+Power system oscillations are modeled as superposition of damped sinusoids:
+
+$$x(t) = \sum_{k=1}^{M} A_k e^{-\sigma_k t} \cos(2\pi f_k t + \phi_k) + n(t)$$
+
+where $A_k$ is amplitude, $f_k$ is frequency, $\sigma_k$ is damping coefficient, $\phi_k$ is phase, and $n(t)$ is noise.
+
+### A.2 Power Spectral Density
+
+The PSD describes power distribution across frequencies. Using Welch's method:
+
+1. Divide signal into overlapping segments
+2. Apply Hanning window to each segment
+3. Compute periodogram via FFT
+4. Average periodograms to reduce variance
+
+$$\hat{S}_{Welch}(f_k) = \frac{1}{L} \sum_{i=0}^{L-1} \hat{S}_i(f_k)$$
+
+### A.3 Euclidean Distance (L2)
+
+For PSD vectors $\mathbf{p}_i, \mathbf{p}_j \in \mathbb{R}^K$:
+
+$$d_{L2}(\mathbf{p}_i, \mathbf{p}_j) = \sqrt{\sum_{k=0}^{K-1} (p_i[k] - p_j[k])^2}$$
+
+**Range**: $[0, \infty)$, unbounded
+
+### A.4 Trace Distance (L1)
+
+First normalize to probability distributions:
+
+$$\tilde{p}_i[k] = \frac{|p_i[k]|}{\sum_{m} |p_i[m]|}$$
+
+Then compute trace distance:
+
+$$d_{trace}(\tilde{\mathbf{p}}_i, \tilde{\mathbf{p}}_j) = \frac{1}{2} \sum_{k=0}^{K-1} |\tilde{p}_i[k] - \tilde{p}_j[k]|$$
+
+**Range**: $[0, 1]$, bounded
+
+### A.5 Swap Test Circuit
+
+The swap test estimates $|\langle\psi_1|\psi_2\rangle|^2$ between quantum states. The circuit operates as follows:
+
+![Swap Test Circuit](figures/swap_test_circuit.svg)
+*Figure A1: Swap test circuit for inner product estimation. The ancilla qubit (top) controls whether the two state registers are swapped. After measurement, P(|0⟩) = ½(1 + |⟨ψ₁|ψ₂⟩|²). The circuit requires 2n+1 qubits for n-qubit state registers, plus O(n) controlled-SWAP gates.*
+
+**Circuit steps:**
+
+1. **Prepare**: Ancilla in $|0\rangle$, state registers in $|\psi_1\rangle$ and $|\psi_2\rangle$
+2. **Hadamard**: Apply H to ancilla, creating superposition $\frac{1}{\sqrt{2}}(|0\rangle + |1\rangle)$
+3. **Controlled-SWAP**: Swap registers conditioned on ancilla being $|1\rangle$
+4. **Hadamard**: Apply H to ancilla again
+5. **Measure**: Measure ancilla in computational basis
+
+**Result:**
+
+$$P(|0\rangle) = \frac{1}{2}\left(1 + |\langle\psi_1|\psi_2\rangle|^2\right)$$
+
+**Deriving Euclidean distance:**
+
+For normalized PSD vectors encoded as quantum states, the inner product relates to L2 distance:
+
+$$d_{L2}^2 = 2\left(1 - |\langle\psi_1|\psi_2\rangle|\right)$$
+
+With finite shots $N$, the probability estimate has variance $\sim 1/N$, which propagates to distance estimates. At 1024 shots, typical probability error is ~1.6%, translating to small but measurable distance variance.
+
+### A.6 Amplitude Encoding for Trace Distance
+
+Encode probability distribution as quantum state:
+
+$$|\psi\rangle = \sum_{k=0}^{K-1} \sqrt{\tilde{p}_k} |k\rangle$$
+
+Measure in computational basis to sample from distribution. Compute trace distance on empirical samples.
+
+### A.7 H0 Persistent Homology
+
+For PSD function $f: \{0, ..., K-1\} \rightarrow \mathbb{R}_+$:
+
+1. Work in log scale: $g[k] = \log_{10}(f[k] + \epsilon)$
+2. Negate to find maxima: $h[k] = -g[k]$
+3. Construct cubical complex
+4. Compute sublevel set filtration
+5. Track connected components (H0)
+6. Record birth-death pairs
+
+Persistence $\pi = \epsilon_{birth} - \epsilon_{death}$ measures peak prominence. Features above 80th percentile threshold are significant modes.
+
+### A.8 Regime Detection
+
+Sequential distance:
+$$d_i = D[i, i+1]$$
+
+Detection threshold:
+$$\theta = \mu_d + \alpha \cdot \sigma_d$$
+
+where $\mu_d$ is mean sequential distance, $\sigma_d$ is standard deviation, and $\alpha$ is sensitivity parameter (typically 1.0).
+
+Cumulative drift from initial state:
+$$\text{Drift}(j) = D[0, j]$$
+
+---
+
+## Appendix B: Implementation Details
+
+### B.1 Software Stack
+
+- **Python 3.10+** with NumPy, SciPy, Pandas
+- **Qiskit 1.0+** for quantum circuit simulation (statevector and shot-based simulation; no actual QPU used)
+- **GUDHI** for persistent homology computation
+- **Matplotlib** for visualization
+
+### B.2 Pipeline Parameters
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| Sampling rate | 30 Hz | Standard PMU rate |
+| Segment duration | 15 s | Balance resolution vs. statistical stability |
+| Segment overlap | 50% | Standard practice |
+| Welch nperseg | 256 | Frequency resolution ~0.12 Hz |
+| Frequency range | 0.1–5.0 Hz | Covers inter-area through control modes |
+| Quantum shots | 1024 | ~1.6% probability estimation error |
+| Persistence threshold | 80th percentile | Empirically validated |
+| Detection threshold | mean + 1σ | Standard change-point detection |
+
+### B.3 Code Availability
+
+Implementation available at: https://github.com/ymijatov/msqc607
+
+---

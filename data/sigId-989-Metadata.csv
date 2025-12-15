@@ -1,0 +1,2 @@
+ID, Data Source, Description, Device/site, Event Tags, Sensor, Rate (Hz), Event Date, Time (UTC), Wave Start, Wave End, Duration (s)
+989, Provider 9,"Number of measuring PMUs: 4", , Events::System Event/Condition::Oscillation, PMU, 30.0, 2016-04-01, 20:00:00.000000, 20:00:00.000000, 21:01:59.967000, 3719.967

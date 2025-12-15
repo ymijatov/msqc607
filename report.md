@@ -407,7 +407,7 @@ This analysis would inform practical deployment:
 - If a grid operator needs to detect 20% power redistribution within 30 seconds, is the current 15s segmentation sufficient?
 - What is the trade-off between temporal resolution and detection reliability?
 
-The frequency resolution constraint is fundamental: a segment of duration $T$ has frequency resolution $\delta f \approx 1/T$. For 15s segments, $\delta f \approx 0.067 Hz$. Shape changes involving frequency shifts smaller than $\delta f$ cannot be resolved regardless of detection method.
+The frequency resolution constraint is fundamental: a segment of duration $T$ has frequency resolution $\Delta f \approx 1/T$. For 15s segments, $\Delta f \approx 0.067 Hz$. Shape changes involving frequency shifts smaller than $\Delta f$ cannot be resolved regardless of detection method.
 
 *This systematic sensitivity analysis is planned for the next phase of research.*
 

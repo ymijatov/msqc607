@@ -102,7 +102,7 @@ compare_with_known_frequencies(results)
 │   ├── three_mode_study_summary.png
 │   ├── sigId-*-benchmark.png
 │   └── ...
-└── data/                     # GESL signal files (not included)
+└── data/                     # GESL signal files
     ├── sigId-1015.csv
     ├── sigId-1015-Metadata.csv
     └── ...
